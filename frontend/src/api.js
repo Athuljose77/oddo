@@ -101,7 +101,7 @@ export const api = {
   createSubscription: (payload) =>
     request("/subscriptions", { method: "POST", body: payload }),
   plans: (pageSize = 100) => request(`/plans${listQuery(pageSize)}`),
-  customers: (pageSize = 100) => request(`/customers${listQuery(pageSize)}`),
+  customers: (pageSize = 300) => request(`/customers${listQuery(pageSize)}`),
   products: (pageSize = 100) => request(`/products${listQuery(pageSize)}`),
   
   // Invoices & Payments

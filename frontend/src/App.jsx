@@ -1759,7 +1759,18 @@ function AddSubscriptionModal({ customers, plans, products, initialPlanId, onClo
   const startingPlan =
     availablePlans.find((plan) => plan.id === Number(initialPlanId)) || availablePlans[0] || null;
 
-  const [customerId, setCustomerId] = useState(customers[0]?.id || "");
+  const [customerSearch, setCustomerSearch] = useState("");
+  const filteredCustomers = useMemo(() => {
+    if (!customerSearch.trim()) return customers;
+    const term = customerSearch.trim().toLowerCase();
+    return customers.filter((c) =>
+      `${c.name || ""} ${c.email || ""}`.toLowerCase().includes(term)
+    );
+  }, [customers, customerSearch]);
+
+  const [customerId, setCustomerId] = useState(
+    filteredCustomers[0]?.id || customers[0]?.id || ""
+  );
   const [planId, setPlanId] = useState(startingPlan?.id || "");
   const [productId, setProductId] = useState(products[0]?.id || "");
   const [quantity, setQuantity] = useState(startingPlan?.minQuantity || 1);
@@ -1767,6 +1778,12 @@ function AddSubscriptionModal({ customers, plans, products, initialPlanId, onClo
   const [paymentTerms, setPaymentTerms] = useState("Net 30");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (filteredCustomers.length > 0 && !filteredCustomers.some((c) => c.id === Number(customerId))) {
+      setCustomerId(filteredCustomers[0].id);
+    }
+  }, [filteredCustomers]);
 
   const selectedPlan = availablePlans.find((plan) => plan.id === Number(planId));
 
@@ -1843,16 +1860,27 @@ function AddSubscriptionModal({ customers, plans, products, initialPlanId, onClo
 
         <label>
           Customer
+          <input
+            type="text"
+            placeholder="Type to filter customer name or email..."
+            value={customerSearch}
+            onChange={(e) => setCustomerSearch(e.target.value)}
+            style={{ marginBottom: "6px" }}
+          />
           <select
             value={customerId}
             onChange={(event) => setCustomerId(event.target.value)}
             required
           >
-            {customers.map((customer) => (
-              <option key={customer.id} value={customer.id}>
-                {customer.name} · {customer.email}
-              </option>
-            ))}
+            {filteredCustomers.length === 0 ? (
+              <option value="" disabled>No customer found matching "{customerSearch}"</option>
+            ) : (
+              filteredCustomers.map((customer) => (
+                <option key={customer.id} value={customer.id}>
+                  {customer.name} · {customer.email}
+                </option>
+              ))
+            )}
           </select>
         </label>
 
@@ -2216,6 +2244,7 @@ export default function App() {
   }
 
   function openCreate(planId = null) {
+    if (user) refreshData(user);
     setPresetPlanId(planId);
     setCreateOpen(true);
   }
