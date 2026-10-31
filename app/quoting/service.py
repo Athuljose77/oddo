@@ -1,7 +1,7 @@
 """Quotation logic: template prefill, line computation, lifecycle helpers.
 
-Conversion to a subscription (confirm) lands together with the subscriptions
-module — until then confirm returns 501 and API.md marks it not implemented.
+Conversion to a subscription (confirm) lives in app.subscriptions.service and
+is wired through the confirm route — one transaction, exactly once.
 """
 from datetime import date, datetime, timedelta
 from decimal import Decimal
@@ -133,11 +133,3 @@ def send_quotation(db: Session, quotation: Quotation, validity_days: int | None 
 
 def create_quotation_number(db: Session) -> str:
     return next_number(db, "QUO")
-
-
-def quotation_to_subscription(_db: Session, _quotation: Quotation) -> None:
-    """Placeholder until the subscriptions module exists (M1, next block)."""
-    raise HTTPException(
-        http_status.HTTP_501_NOT_IMPLEMENTED,
-        "Subscription conversion lands with the subscriptions module — see docs/API.md status table",
-    )

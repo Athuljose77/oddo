@@ -377,17 +377,28 @@ Rule-based scoring is the baseline; ML only if it beats the baseline on holdout 
 | tax-rules / discount-rules | ✅ implemented |
 | quote-templates | ✅ implemented |
 | quotations (list/create/patch/send/cancel) | ✅ implemented |
-| quotations confirm (→ subscription) | ⬜ next block (subscriptions module) — returns 501 |
+| quotations confirm (→ subscription) | ✅ implemented |
 | quotations pdf | ⬜ returns 501 |
-| subscriptions + transitions | ⬜ next block |
-| billing runs + attempts + retry | ⬜ |
+| subscriptions + transitions | ✅ implemented (bill-now ✅ live) |
+| billing runs + attempts + retry | ✅ implemented (dry_run/live, catch-up capped, idempotent, retry in place) |
 | invoices | ⬜ |
 | payments | ⬜ |
 | reports / insights | ⬜ |
 | odoo | ⬜ (flag off) |
 
 Notes as implemented:
+- **Money is serialized as a JSON string** (`"total": "1999.00"`, `"unit_price": "999.50"`) —
+  backend uses `Decimal` to guarantee exact arithmetic. Frontend: `parseFloat(x)` before
+  math, and format for display (e.g. `Intl.NumberFormat`). Never add money values as strings.
+- Dates are ISO `YYYY-MM-DD`; timestamps are UTC ISO-8601.
 - All list endpoints return the envelope `{items, total, page, page_size}` (templates, tax and
   discount rule lists currently return bare arrays — small groups; frontend should handle both).
 - `GET /customers` for a customer role returns their own record (single item), not 403.
 - Quotation `status` reads `expired` lazily when `valid_until < today` (no DB write on read).
+- Subscription confirm transitions (`send/revise/confirm/activate/pause/resume/renew/close`)
+  are all `POST /subscriptions/{id}/{action}` returning the full subscription (with `lines`
+  and `events` status history). `renew` from `active` extends expiry by one cycle when
+  `new_expiry_date` is omitted; from `closed` it re-anchors `next_billing_date` forward
+  (no back-billing for the closed gap). `close` while a term remains requires
+  `plan.allow_early_close`; the `early` flag in the body is informational — the server
+  validates against `expiry_date`.

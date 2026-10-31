@@ -32,25 +32,35 @@ def compute_line_amounts(
 ) -> dict:
     """Return subtotal / tax_amount / total / tax_rate / tax_included for one line."""
     gross = (Decimal(quantity) * unit_price).quantize(TWO_PLACES, rounding=ROUND_HALF_UP)
+    return amounts_on_base(gross, tax_rule)
+
+
+def amounts_on_base(base: Decimal, tax_rule: TaxRule | None) -> dict:
+    """Tax math on an already-discounted base (billing engine: price -> discount -> tax).
+
+    `base` = line gross minus its allocated discount (tax-exclusive net, or
+    tax-inclusive gross when the rule includes tax).
+    """
+    base = base.quantize(TWO_PLACES, rounding=ROUND_HALF_UP)
     if tax_rule is None:
         return {
-            "subtotal": gross,
+            "subtotal": base,
             "tax_amount": Decimal("0.00"),
-            "total": gross,
+            "total": base,
             "tax_rate": Decimal("0.00"),
             "tax_included": False,
         }
 
     rate = Decimal(str(tax_rule.rate)) / Decimal("100")
     if tax_rule.tax_included:
-        # gross already contains tax: tax = gross * rate / (1 + rate)
-        tax = (gross * rate / (Decimal("1") + rate)).quantize(TWO_PLACES, rounding=ROUND_HALF_UP)
-        subtotal = (gross - tax).quantize(TWO_PLACES, rounding=ROUND_HALF_UP)
-        total = gross
+        # base already contains tax: tax = base * rate / (1 + rate)
+        tax = (base * rate / (Decimal("1") + rate)).quantize(TWO_PLACES, rounding=ROUND_HALF_UP)
+        subtotal = (base - tax).quantize(TWO_PLACES, rounding=ROUND_HALF_UP)
+        total = base
     else:
-        subtotal = gross
-        tax = (gross * rate).quantize(TWO_PLACES, rounding=ROUND_HALF_UP)
-        total = gross + tax
+        subtotal = base
+        tax = (base * rate).quantize(TWO_PLACES, rounding=ROUND_HALF_UP)
+        total = base + tax
 
     return {
         "subtotal": subtotal,

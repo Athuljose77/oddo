@@ -118,3 +118,24 @@ class QuotationOut(BaseModel):
     tax_total: Decimal
     total: Decimal
     lines: list[QuotationLineOut] = []
+
+
+class ConfirmOut(BaseModel):
+    """Response of POST /quotations/{id}/confirm (docs/API.md §5)."""
+
+    quotation: QuotationOut
+    subscription: "SubscriptionBrief"
+
+
+class SubscriptionBrief(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    number: str
+    status: str
+    start_date: date
+    expiry_date: date | None
+    next_billing_date: date | None
+
+
+ConfirmOut.model_rebuild()
