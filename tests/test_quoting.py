@@ -340,3 +340,30 @@ class TestCustomerScoping:
             ).status_code
             == 403
         )
+
+
+class TestQuotationPdf:
+    def test_staff_and_customer_can_download_pdf(self, client, make_user):
+        admin_token, staff_token, customer, product, plan = _setup(client, make_user)
+        _, customer_token = make_user(role="customer")
+        hs = auth_header(staff_token)
+        hc = auth_header(customer_token)
+
+        q = client.post(
+            "/api/v1/quotations",
+            headers=hs,
+            json={
+                "customer_id": customer.id,
+                "lines": [{"product_id": product["id"], "quantity": 2, "unit_price": 100.0}],
+            },
+        ).json()
+
+        # Staff can download
+        r = client.get(f"/api/v1/quotations/{q['id']}/pdf", headers=hs)
+        assert r.status_code == 200
+        assert r.headers["content-type"] == "application/pdf"
+        assert r.content.startswith(b"%PDF-")
+
+        # Other customer cannot download -> 404
+        r2 = client.get(f"/api/v1/quotations/{q['id']}/pdf", headers=hc)
+        assert r2.status_code == 404
