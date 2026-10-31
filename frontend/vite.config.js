@@ -5,15 +5,14 @@ import { defineConfig } from 'vite'
 export default defineConfig({
   plugins: [react()],
   server: {
-    // Proxy API requests to the FastAPI backend running on port 8000
+    // Proxy API requests to the FastAPI backend running on port 8000.
+    // No path rewrite: the backend already serves under /api/v1.
     proxy: {
       '/api': {
         target: 'http://127.0.0.1:8000',
         changeOrigin: true,
         secure: false,
-        // Remove /api prefix before forwarding to backend
-        rewrite: (path) => path.replace(/^\/api/, '')
-      }
-    }
-  }
+      },
+    },
+  },
 })
