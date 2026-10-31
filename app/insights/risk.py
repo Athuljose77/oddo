@@ -1,26 +1,25 @@
 def risk_score(overdue_invoices: int, late_payments_6m: int,
                outstanding_amount: float, days_to_expiry: int | None):
-    score = 0
-    reasons = []
+    factors = []
 
-    if overdue_invoices > 0:
-        score += 40
-        reasons.append(f"{overdue_invoices} overdue invoice(s)")
     if late_payments_6m >= 2:
-        score += 30
-        reasons.append(f"{late_payments_6m} late payments in the last 6 months")
+        factors.append({"name": "late_payments", "value": late_payments_6m,
+                        "weight": 30, "contribution": 30})
+    if overdue_invoices > 0:
+        factors.append({"name": "outstanding_invoices", "value": overdue_invoices,
+                        "weight": 25, "contribution": 25})
     if outstanding_amount > 10000:
-        score += 15
-        reasons.append("High outstanding balance")
+        factors.append({"name": "high_outstanding_balance", "value": float(outstanding_amount),
+                        "weight": 18, "contribution": 18})
     if days_to_expiry is not None and days_to_expiry <= 30:
-        score += 15
-        reasons.append("Subscription expires within 30 days")
+        factors.append({"name": "expiry_approaching_days", "value": days_to_expiry,
+                        "weight": 27, "contribution": 27})
 
-    score = min(score, 100)
-    level = "High" if score >= 70 else "Medium" if score >= 40 else "Low"
+    score = min(sum(f["contribution"] for f in factors), 100)
+    band = "high" if score >= 70 else "medium" if score >= 40 else "low"
     action = {
-        "High": "Contact the customer and resolve payment before renewal",
-        "Medium": "Send a payment reminder",
-        "Low": "No action needed",
-    }[level]
-    return {"score": score, "level": level, "reasons": reasons, "suggested_action": action}
+        "high": "Contact the customer and resolve the outstanding payment before renewal",
+        "medium": "Send a payment reminder",
+        "low": "No action needed",
+    }[band]
+    return {"score": score, "band": band, "factors": factors, "action": action}
