@@ -60,11 +60,14 @@ class TestStaffManagement:
 
 class TestCustomerIsolation:
     def test_customer_sees_only_self_in_list(self, client, make_user):
+        """Directory endpoint: customers receive their own record only."""
         cust_a, token_a = make_user(role="customer")
         make_user(role="customer")  # another customer exists
         r = client.get("/api/v1/customers", headers=auth_header(token_a))
-        # require_staff blocks customers entirely from the staff directory
-        assert r.status_code == 403
+        assert r.status_code == 200
+        items = r.json()["items"]
+        assert len(items) == 1
+        assert items[0]["id"] == cust_a.id
 
     def test_customer_cannot_read_other_customer(self, client, make_user):
         _, token_a = make_user(role="customer")
@@ -81,7 +84,7 @@ class TestCustomerIsolation:
         _, token = make_user(role="staff")
         r = client.get("/api/v1/customers", headers=auth_header(token))
         assert r.status_code == 200
-        assert all(c["role"] == "customer" for c in r.json())
+        assert all(c["role"] == "customer" for c in r.json()["items"])
 
     def test_admin_manages_customers(self, client, make_user):
         _, admin_token = make_user(role="admin")
