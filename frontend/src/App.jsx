@@ -3424,6 +3424,60 @@ function SettingsPage({ user, roleLabel, lastSynced, loading, onRefresh, onLogou
         </form>
       </section>
 
+      {/* System & Billing Engine Configuration */}
+      <section className="panel settings-panel">
+        <h3>System & billing engine parameters</h3>
+        <p>Operational constants, timezone anchoring, and integration parameters.</p>
+
+        <div className="settings-row">
+          <div>
+            <strong>Billing timezone</strong>
+            <span>All contract cycles and invoice dates are anchored to this zone.</span>
+          </div>
+          <code>Asia/Kolkata (IST)</code>
+        </div>
+
+        <div className="settings-row">
+          <div>
+            <strong>Automated catch-up window</strong>
+            <span>Maximum catch-up periods evaluated per subscription on billing day.</span>
+          </div>
+          <span>366 periods</span>
+        </div>
+
+        <div className="settings-row">
+          <div>
+            <strong>Stale run reap timeout</strong>
+            <span>Orphaned background runs older than this are safely reaped.</span>
+          </div>
+          <span>15 minutes</span>
+        </div>
+
+        <div className="settings-row">
+          <div>
+            <strong>Overpayment policy</strong>
+            <span>Permits or rejects payments exceeding the outstanding balance.</span>
+          </div>
+          <span className="tag-pill">Strict (Disallowed)</span>
+        </div>
+
+        <div className="settings-row">
+          <div>
+            <strong>Odoo ERP connector</strong>
+            <span>Enterprise sync protocol (JSON-2, JSON-RPC, XML-RPC).</span>
+          </div>
+          <span className="tag-pill">Standby (Feature Flag Off)</span>
+        </div>
+
+        <div className="settings-row">
+          <div>
+            <strong>Mailer dispatch mode</strong>
+            <span>Destination for invoice links and password reset tokens.</span>
+          </div>
+          <span className="tag-pill" style={{ background: "#e0eee5", color: "#188453" }}>Console Log (Demo Mode)</span>
+        </div>
+      </section>
+
       {/* Admin: Staff Team Management */}
       {isAdmin && (
         <section className="panel full-panel">
