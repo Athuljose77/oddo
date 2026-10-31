@@ -1,13 +1,14 @@
 """Admin area: staff creation (admin-only) and customer management."""
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func, or_, select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.auth import service
 from app.auth.models import User
 from app.auth.schemas import RegisterIn, StaffCreateIn, UserOut, UserPatchIn
 from app.core.database import get_db
-from app.core.dependencies import get_current_user, require_admin, require_staff
+from app.core.dependencies import get_current_user, require_admin
+from app.core.pagination import paginate
 
 router = APIRouter(prefix="/api/v1", tags=["admin"])
 
@@ -16,12 +17,14 @@ def _staff_query(db: Session):
     return select(User).where(User.role == "staff").order_by(User.id)
 
 
-@router.get("/admin/staff", response_model=list[UserOut])
+@router.get("/admin/staff")
 def list_staff(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
     _: User = Depends(require_admin),
 ):
-    return db.scalars(_staff_query(db)).all()
+    return paginate(db, _staff_query(db), page, page_size)
 
 
 @router.post("/admin/staff", response_model=UserOut, status_code=status.HTTP_201_CREATED)
@@ -58,22 +61,22 @@ def patch_staff(
 CustomerOut = UserOut  # customers are users with role='customer'
 
 
-@router.get("/customers", response_model=list[UserOut])
+@router.get("/customers")
 def list_customers(
     q: str | None = Query(None, min_length=1),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
-    user: User = Depends(require_staff),
+    user: User = Depends(get_current_user),
 ):
+    if user.role == "customer":
+        # Customers have no directory — return their own record scoped
+        return {"items": [user], "total": 1, "page": page, "page_size": page_size}
     stmt = select(User).where(User.role == "customer")
-    if user.role == "customer":  # defensive: scoped to self
-        stmt = stmt.where(User.id == user.id)
     if q:
         pattern = f"%{q}%"
         stmt = stmt.where(or_(User.name.ilike(pattern), User.email.ilike(pattern)))
-    stmt = stmt.order_by(User.id).offset((page - 1) * page_size).limit(page_size)
-    return db.scalars(stmt).all()
+    return paginate(db, stmt.order_by(User.id), page, page_size)
 
 
 @router.get("/customers/{customer_id}", response_model=UserOut)
@@ -117,7 +120,3 @@ def patch_customer(
     db.commit()
     db.refresh(customer)
     return customer
-
-
-# count helper used by M2's reports later; keep query import warm
-_ = func

@@ -34,6 +34,15 @@ def _schema():
         os.remove(_TEST_DB)
 
 
+@pytest.fixture(autouse=True)
+def _clean_db(db):
+    """Wipe all rows before EVERY test — tests must not leak data into each other."""
+    for table in reversed(Base.metadata.sorted_tables):
+        db.execute(table.delete())
+    db.commit()
+    yield
+
+
 @pytest.fixture()
 def client():
     with TestClient(app) as c:
