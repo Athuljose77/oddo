@@ -112,8 +112,39 @@ export const api = {
   billSubscriptionNow: (id) => request(`/subscriptions/${id}/bill-now`, { method: "POST" }),
   plans: (pageSize = 100) => request(`/plans${listQuery(pageSize)}`),
   customers: (pageSize = 300) => request(`/customers${listQuery(pageSize)}`),
+  // Products & Variants
   products: (pageSize = 100) => request(`/products${listQuery(pageSize)}`),
-  
+  createProduct: (payload) => request("/products", { method: "POST", body: payload }),
+  updateProduct: (id, payload) => request(`/products/${id}`, { method: "PATCH", body: payload }),
+  getProductVariants: (productId) => request(`/products/${productId}/variants`),
+  createProductVariant: (productId, payload) => request(`/products/${productId}/variants`, { method: "POST", body: payload }),
+  updateVariant: (id, payload) => request(`/variants/${id}`, { method: "PATCH", body: payload }),
+  deleteVariant: (id) => request(`/variants/${id}`, { method: "DELETE" }),
+
+  // Plans
+  plans: (pageSize = 100) => request(`/plans${listQuery(pageSize)}`),
+  createPlan: (payload) => request("/plans", { method: "POST", body: payload }),
+  updatePlan: (id, payload) => request(`/plans/${id}`, { method: "PATCH", body: payload }),
+  closePlan: (id) => request(`/plans/${id}/close`, { method: "POST" }),
+  reopenPlan: (id) => request(`/plans/${id}/reopen`, { method: "POST" }),
+
+  // Customers
+  customers: (pageSize = 300) => request(`/customers${listQuery(pageSize)}`),
+  createCustomer: (payload) => request("/customers", { method: "POST", body: payload }),
+  updateCustomer: (id, payload) => request(`/customers/${id}`, { method: "PATCH", body: payload }),
+
+  // Taxes & Discounts
+  taxes: () => request("/tax-rules"),
+  createTax: (payload) => request("/tax-rules", { method: "POST", body: payload }),
+  updateTax: (id, payload) => request(`/tax-rules/${id}`, { method: "PATCH", body: payload }),
+  discounts: () => request("/discount-rules"),
+  createDiscount: (payload) => request("/discount-rules", { method: "POST", body: payload }),
+  updateDiscount: (id, payload) => request(`/discount-rules/${id}`, { method: "PATCH", body: payload }),
+
+  // Subscriptions transitions
+  reviseSubscription: (id) => request(`/subscriptions/${id}/revise`, { method: "POST" }),
+  renewSubscription: (id, payload = {}) => request(`/subscriptions/${id}/renew`, { method: "POST", body: payload }),
+
   // Invoices & Payments
   invoices: (params = "") => request(`/invoices${params ? `?${params}` : listQuery(100)}`),
   invoice: (id) => request(`/invoices/${id}`),
@@ -136,7 +167,26 @@ export const api = {
   runBilling: (payload) => request("/billing/runs", { method: "POST", body: payload }),
   retryBilling: (runId) => request(`/billing/runs/${runId}/retry`, { method: "POST" }),
 
-  // Quotations
-  quotations: (pageSize = 100) => request(`/quotations${listQuery(pageSize)}`),
+  // Quotations & Templates
+  quotations: (params = "") => request(`/quotations${params ? `?${params}` : listQuery(100)}`),
+  quotation: (id) => request(`/quotations/${id}`),
+  createQuotation: (payload) => request("/quotations", { method: "POST", body: payload }),
+  patchQuotation: (id, payload) => request(`/quotations/${id}`, { method: "PATCH", body: payload }),
+  sendQuotation: (id) => request(`/quotations/${id}/send`, { method: "POST" }),
+  confirmQuotation: (id) => request(`/quotations/${id}/confirm`, { method: "POST" }),
+  cancelQuotation: (id) => request(`/quotations/${id}/cancel`, { method: "POST" }),
   downloadQuotationPdf: (id, number) => downloadPdf(`/quotations/${id}/pdf`, `${number || `QUO-${id}`}.pdf`),
+  quoteTemplates: () => request("/quote-templates"),
+  createQuoteTemplate: (payload) => request("/quote-templates", { method: "POST", body: payload }),
+  updateQuoteTemplate: (id, payload) => request(`/quote-templates/${id}`, { method: "PATCH", body: payload }),
+
+  // Admin: Staff management
+  staffList: (pageSize = 100) => request(`/admin/staff${listQuery(pageSize)}`),
+  createStaff: (payload) => request("/admin/staff", { method: "POST", body: payload }),
+  updateStaff: (id, payload) => request(`/admin/staff/${id}`, { method: "PATCH", body: payload }),
+
+  // User auth & password recovery
+  forgotPassword: (email) => request("/auth/forgot-password", { method: "POST", body: { email }, auth: false }),
+  resetPassword: (payload) => request("/auth/reset-password", { method: "POST", body: payload, auth: false }),
+  changePassword: (payload) => request("/auth/change-password", { method: "POST", body: payload }),
 };

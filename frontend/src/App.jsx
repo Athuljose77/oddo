@@ -36,6 +36,9 @@ import {
   FileText,
   TrendingUp,
   Pause,
+  Tag,
+  Percent,
+  Trash2,
 } from "lucide-react";
 import "./App.css";
 import { API_BASE, api, clearToken, getToken, setToken } from "./api";
@@ -370,8 +373,11 @@ function PlanMix({ subscriptions }) {
 
 // ---------------------------------------------------------------- auth
 function AuthScreen({ onAuth, busy, error }) {
-  const [mode, setMode] = useState("login");
-  const [form, setForm] = useState({ name: "", email: "", password: "" });
+  const [mode, setMode] = useState("login"); // login | register | forgot | reset
+  const [form, setForm] = useState({ name: "", email: "", password: "", token: "", newPassword: "" });
+  const [resetNotice, setResetNotice] = useState("");
+  const [resetError, setResetError] = useState("");
+  const [resetBusy, setResetBusy] = useState(false);
 
   function update(event) {
     setForm((current) => ({ ...current, [event.target.name]: event.target.value }));
@@ -379,7 +385,44 @@ function AuthScreen({ onAuth, busy, error }) {
 
   function submit(event) {
     event.preventDefault();
+    if (mode === "forgot") {
+      handleForgotPassword();
+      return;
+    }
+    if (mode === "reset") {
+      handleResetPassword();
+      return;
+    }
     onAuth({ mode, ...form });
+  }
+
+  async function handleForgotPassword() {
+    setResetBusy(true);
+    setResetNotice("");
+    setResetError("");
+    try {
+      await api.forgotPassword(form.email);
+      setResetNotice("If this email exists, a reset link/token has been generated (check backend console logs).");
+    } catch (err) {
+      setResetError(err.message || "Failed to request password reset.");
+    } finally {
+      setResetBusy(false);
+    }
+  }
+
+  async function handleResetPassword() {
+    setResetBusy(true);
+    setResetNotice("");
+    setResetError("");
+    try {
+      await api.resetPassword({ token: form.token, new_password: form.newPassword });
+      setResetNotice("Password reset successfully! You can now sign in.");
+      setMode("login");
+    } catch (err) {
+      setResetError(err.message || "Failed to reset password. Invalid or expired token.");
+    } finally {
+      setResetBusy(false);
+    }
   }
 
   return (
@@ -420,25 +463,59 @@ function AuthScreen({ onAuth, busy, error }) {
             <button
               type="button"
               className={mode === "login" ? "selected" : ""}
-              onClick={() => setMode("login")}
+              onClick={() => { setMode("login"); setResetNotice(""); setResetError(""); }}
             >
               Sign in
             </button>
             <button
               type="button"
               className={mode === "register" ? "selected" : ""}
-              onClick={() => setMode("register")}
+              onClick={() => { setMode("register"); setResetNotice(""); setResetError(""); }}
             >
               Create account
             </button>
+            {(mode === "forgot" || mode === "reset") && (
+              <button
+                type="button"
+                className="selected"
+                onClick={() => {}}
+              >
+                Reset access
+              </button>
+            )}
           </div>
 
-          <h2>{mode === "login" ? "Welcome back" : "Create your account"}</h2>
+          <h2>
+            {mode === "login"
+              ? "Welcome back"
+              : mode === "register"
+              ? "Create your account"
+              : mode === "forgot"
+              ? "Reset your password"
+              : "Enter new password"}
+          </h2>
           <p className="auth-sub">
             {mode === "login"
               ? "Sign in with your Brightloop account."
-              : "Public sign-up creates a customer account. Staff accounts are created by an admin."}
+              : mode === "register"
+              ? "Public sign-up creates a customer account. Staff accounts are created by an admin."
+              : mode === "forgot"
+              ? "Enter your account email to receive a secure password reset link."
+              : "Enter the reset token received and choose your new strong password."}
           </p>
+
+          {resetNotice && (
+            <div className="banner banner-info" style={{ marginBottom: "14px", fontSize: "12px" }}>
+              <CircleCheck size={16} />
+              <div>{resetNotice}</div>
+            </div>
+          )}
+
+          {resetError && (
+            <div className="auth-error" style={{ marginBottom: "14px" }}>
+              <AlertCircle size={15} /> {resetError}
+            </div>
+          )}
 
           <form onSubmit={submit}>
             {mode === "register" && (
@@ -455,30 +532,64 @@ function AuthScreen({ onAuth, busy, error }) {
                 />
               </label>
             )}
-            <label>
-              Email
-              <input
-                name="email"
-                type="email"
-                value={form.email}
-                onChange={update}
-                required
-                placeholder="you@company.com"
-                autoComplete="email"
-              />
-            </label>
-            <label>
-              Password
-              <input
-                name="password"
-                type="password"
-                value={form.password}
-                onChange={update}
-                required
-                placeholder="••••••••"
-                autoComplete={mode === "login" ? "current-password" : "new-password"}
-              />
-            </label>
+
+            {(mode === "login" || mode === "register" || mode === "forgot") && (
+              <label>
+                Email address
+                <input
+                  name="email"
+                  type="email"
+                  value={form.email}
+                  onChange={update}
+                  required
+                  placeholder="you@company.com"
+                  autoComplete="email"
+                />
+              </label>
+            )}
+
+            {(mode === "login" || mode === "register") && (
+              <label>
+                Password
+                <input
+                  name="password"
+                  type="password"
+                  value={form.password}
+                  onChange={update}
+                  required
+                  placeholder="••••••••"
+                  autoComplete={mode === "login" ? "current-password" : "new-password"}
+                />
+              </label>
+            )}
+
+            {mode === "reset" && (
+              <>
+                <label>
+                  Reset token
+                  <input
+                    name="token"
+                    type="text"
+                    value={form.token}
+                    onChange={update}
+                    required
+                    placeholder="Paste token from email / backend log"
+                  />
+                </label>
+                <label>
+                  New password
+                  <input
+                    name="newPassword"
+                    type="password"
+                    value={form.newPassword}
+                    onChange={update}
+                    required
+                    placeholder="9+ chars, 1 upper, 1 lower, 1 special"
+                  />
+                </label>
+              </>
+            )}
+
             {mode === "register" && (
               <p className="auth-hint">
                 9+ characters, one uppercase, one lowercase and one special character.
@@ -491,17 +602,68 @@ function AuthScreen({ onAuth, busy, error }) {
               </div>
             )}
 
-            <button className="primary-button auth-submit" type="submit" disabled={busy}>
-              {busy ? (
+            <button className="primary-button auth-submit" type="submit" disabled={busy || resetBusy}>
+              {busy || resetBusy ? (
                 <>
                   <RefreshCw size={15} className="spin" /> Please wait…
                 </>
               ) : mode === "login" ? (
                 "Sign in"
-              ) : (
+              ) : mode === "register" ? (
                 "Create account"
+              ) : mode === "forgot" ? (
+                "Send reset instructions"
+              ) : (
+                "Set new password"
               )}
             </button>
+
+            {mode === "login" && (
+              <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "10px" }}>
+                <button
+                  type="button"
+                  className="text-button"
+                  style={{ fontSize: "11px", color: "#159b65", background: "none", border: 0, padding: 0 }}
+                  onClick={() => setMode("forgot")}
+                >
+                  Forgot password?
+                </button>
+              </div>
+            )}
+
+            {mode === "forgot" && (
+              <div style={{ display: "flex", justifyContent: "space-between", marginTop: "12px", fontSize: "11px" }}>
+                <button
+                  type="button"
+                  className="text-button"
+                  style={{ background: "none", border: 0, padding: 0 }}
+                  onClick={() => setMode("login")}
+                >
+                  Back to Sign in
+                </button>
+                <button
+                  type="button"
+                  className="text-button"
+                  style={{ background: "none", border: 0, padding: 0 }}
+                  onClick={() => setMode("reset")}
+                >
+                  Already have a token?
+                </button>
+              </div>
+            )}
+
+            {mode === "reset" && (
+              <div style={{ display: "flex", justifyContent: "flex-start", marginTop: "12px", fontSize: "11px" }}>
+                <button
+                  type="button"
+                  className="text-button"
+                  style={{ background: "none", border: 0, padding: 0 }}
+                  onClick={() => setMode("login")}
+                >
+                  Back to Sign in
+                </button>
+              </div>
+            )}
           </form>
 
           <div className="auth-foot">
@@ -828,86 +990,1020 @@ function SubscriptionsPage({ subscriptions, isStaff, onCreate, onSelect }) {
   );
 }
 
-// ---------------------------------------------------------------- plans
-function PlansPage({ plans, subscriptions, isStaff, onCreate }) {
-  if (!plans.length) {
-    return (
-      <section className="panel full-panel">
-        <div className="panel-heading">
-          <div>
-            <h3>Plans & pricing</h3>
-            <p>Plans are created by admins through the catalog API.</p>
-          </div>
-        </div>
-        <p className="empty-state">No plans returned by the backend yet.</p>
-      </section>
-    );
+// ---------------------------------------------------------------- catalog modals
+function CreatePlanModal({ onClose, onCreated, notify }) {
+  const [name, setName] = useState("");
+  const [cycle, setCycle] = useState("monthly");
+  const [price, setPrice] = useState("");
+  const [minQty, setMinQty] = useState(1);
+  const [availFrom, setAvailFrom] = useState("");
+  const [availTo, setAvailTo] = useState("");
+  const [autoClose, setAutoClose] = useState(false);
+  const [allowEarlyClose, setAllowEarlyClose] = useState(true);
+  const [allowPause, setAllowPause] = useState(true);
+  const [allowRenew, setAllowRenew] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function submit(e) {
+    e.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      await api.createPlan({
+        name,
+        billing_cycle: cycle,
+        price: parseFloat(price),
+        min_quantity: Number(minQty),
+        available_from: availFrom || null,
+        available_to: availTo || null,
+        auto_close: autoClose,
+        allow_early_close: allowEarlyClose,
+        allow_pause: allowPause,
+        allow_renew: allowRenew,
+      });
+      if (notify) notify(`Plan "${name}" created successfully!`);
+      onCreated();
+    } catch (err) {
+      setError(err.message || "Failed to create plan");
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
-    <div className="plans-grid">
-      {plans.map((plan, index) => {
-        const activeCount = subscriptions.filter(
-          (subscription) => subscription.planId === plan.id && subscription.status === "active",
-        ).length;
-        const color = PLAN_COLORS[index % PLAN_COLORS.length];
-        const available = plan.status === "active";
+    <div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <form className="modal modal-wide" onSubmit={submit}>
+        <div className="modal-heading">
+          <div>
+            <h3>Create pricing plan</h3>
+            <p>Configure plan terms, recurring billing cycle, and lifecycle rules.</p>
+          </div>
+          <button type="button" className="icon-button" onClick={onClose}><X size={20} /></button>
+        </div>
 
-        return (
-          <div className={`plan-card ${color}`} key={plan.id}>
-            <div className="plan-card-top">
-              <span className="plan-symbol">
-                <Zap size={19} />
-              </span>
-              <span className="plan-count">{activeCount} active</span>
+        {error && <div className="auth-error"><AlertCircle size={15} /> {error}</div>}
+
+        <label>
+          Plan name
+          <input type="text" placeholder="e.g. Enterprise Yearly" value={name} onChange={(e) => setName(e.target.value)} required />
+        </label>
+
+        <div className="form-row-2">
+          <label>
+            Billing cycle
+            <select value={cycle} onChange={(e) => setCycle(e.target.value)}>
+              <option value="daily">Daily</option>
+              <option value="weekly">Weekly</option>
+              <option value="monthly">Monthly</option>
+              <option value="yearly">Yearly</option>
+            </select>
+          </label>
+          <label>
+            Base price (₹)
+            <input type="number" step="0.01" min="0" placeholder="1180.00" value={price} onChange={(e) => setPrice(e.target.value)} required />
+          </label>
+        </div>
+
+        <div className="form-row-3">
+          <label>
+            Minimum seats/qty
+            <input type="number" min="1" value={minQty} onChange={(e) => setMinQty(e.target.value)} required />
+          </label>
+          <label>
+            Available from (optional)
+            <input type="date" value={availFrom} onChange={(e) => setAvailFrom(e.target.value)} />
+          </label>
+          <label>
+            Available to (optional)
+            <input type="date" value={availTo} onChange={(e) => setAvailTo(e.target.value)} />
+          </label>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", margin: "10px 0" }}>
+          <label style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "12px", cursor: "pointer" }}>
+            <input type="checkbox" checked={allowPause} onChange={(e) => setAllowPause(e.target.checked)} />
+            Allow customer to pause
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "12px", cursor: "pointer" }}>
+            <input type="checkbox" checked={allowRenew} onChange={(e) => setAllowRenew(e.target.checked)} />
+            Allow contract renewal
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "12px", cursor: "pointer" }}>
+            <input type="checkbox" checked={allowEarlyClose} onChange={(e) => setAllowEarlyClose(e.target.checked)} />
+            Allow early cancellation
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "12px", cursor: "pointer" }}>
+            <input type="checkbox" checked={autoClose} onChange={(e) => setAutoClose(e.target.checked)} />
+            Auto-close when expired
+          </label>
+        </div>
+
+        <div className="modal-actions">
+          <button type="button" className="secondary-button" onClick={onClose} disabled={busy}>Cancel</button>
+          <button type="submit" className="primary-button" disabled={busy}>
+            {busy ? "Saving..." : "Create plan"}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function CreateProductModal({ onClose, onCreated, notify }) {
+  const [name, setName] = useState("");
+  const [type, setType] = useState("subscription");
+  const [salesPrice, setSalesPrice] = useState("");
+  const [costPrice, setCostPrice] = useState("");
+  const [notes, setNotes] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function submit(e) {
+    e.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      await api.createProduct({
+        name,
+        type,
+        sales_price: parseFloat(salesPrice),
+        cost_price: costPrice ? parseFloat(costPrice) : 0,
+        notes: notes || undefined,
+      });
+      if (notify) notify(`Product "${name}" added to catalog!`);
+      onCreated();
+    } catch (err) {
+      setError(err.message || "Failed to create product");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <form className="modal" onSubmit={submit}>
+        <div className="modal-heading">
+          <div>
+            <h3>Add new product</h3>
+            <p>Publish a core subscription item or add-on product to the catalog.</p>
+          </div>
+          <button type="button" className="icon-button" onClick={onClose}><X size={20} /></button>
+        </div>
+
+        {error && <div className="auth-error"><AlertCircle size={15} /> {error}</div>}
+
+        <label>
+          Product name
+          <input type="text" placeholder="e.g. CloudPro, Extra Seat, Odoo Connector" value={name} onChange={(e) => setName(e.target.value)} required />
+        </label>
+
+        <label>
+          Product type
+          <select value={type} onChange={(e) => setType(e.target.value)}>
+            <option value="subscription">Subscription (recurring service / software)</option>
+            <option value="addon">Add-on (seats, support packs, storage modules)</option>
+          </select>
+        </label>
+
+        <div className="form-row-2">
+          <label>
+            Sales price (₹)
+            <input type="number" step="0.01" min="0" placeholder="2000.00" value={salesPrice} onChange={(e) => setSalesPrice(e.target.value)} required />
+          </label>
+          <label>
+            Cost price (₹)
+            <input type="number" step="0.01" min="0" placeholder="800.00" value={costPrice} onChange={(e) => setCostPrice(e.target.value)} />
+          </label>
+        </div>
+
+        <label>
+          Commercial notes
+          <textarea rows="2" placeholder="Product features, delivery terms, etc." value={notes} onChange={(e) => setNotes(e.target.value)} />
+        </label>
+
+        <div className="modal-actions">
+          <button type="button" className="secondary-button" onClick={onClose} disabled={busy}>Cancel</button>
+          <button type="submit" className="primary-button" disabled={busy}>
+            {busy ? "Saving..." : "Save product"}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function CreateVariantModal({ product, onClose, onCreated, notify }) {
+  const [attribute, setAttribute] = useState("Brand");
+  const [value, setValue] = useState("");
+  const [priceDelta, setPriceDelta] = useState("0");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function submit(e) {
+    e.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      await api.createProductVariant(product.id, {
+        attribute,
+        value,
+        price_delta: parseFloat(priceDelta),
+      });
+      if (notify) notify(`Variant "${attribute}: ${value}" added to ${product.name}!`);
+      onCreated();
+    } catch (err) {
+      setError(err.message || "Failed to add variant");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <form className="modal" onSubmit={submit}>
+        <div className="modal-heading">
+          <div>
+            <h3>Add variant to {product.name}</h3>
+            <p>Offer product options (e.g., Brand: Odoo adding ₹560 to price).</p>
+          </div>
+          <button type="button" className="icon-button" onClick={onClose}><X size={20} /></button>
+        </div>
+
+        {error && <div className="auth-error"><AlertCircle size={15} /> {error}</div>}
+
+        <label>
+          Variant attribute
+          <input type="text" placeholder="e.g. Brand, Edition, Tier, Region" value={attribute} onChange={(e) => setAttribute(e.target.value)} required />
+        </label>
+
+        <label>
+          Attribute value
+          <input type="text" placeholder="e.g. Odoo, Enterprise, US-East" value={value} onChange={(e) => setValue(e.target.value)} required />
+        </label>
+
+        <label>
+          Price adjustment delta (₹)
+          <input type="number" step="0.01" placeholder="e.g. 560.00 (or 0 for included)" value={priceDelta} onChange={(e) => setPriceDelta(e.target.value)} required />
+        </label>
+
+        <div className="modal-actions">
+          <button type="button" className="secondary-button" onClick={onClose} disabled={busy}>Cancel</button>
+          <button type="submit" className="primary-button" disabled={busy}>
+            {busy ? "Adding..." : "Add variant"}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function CreateTaxModal({ products, onClose, onCreated, notify }) {
+  const [name, setName] = useState("");
+  const [rate, setRate] = useState("18.0");
+  const [taxIncluded, setTaxIncluded] = useState(false);
+  const [priority, setPriority] = useState(10);
+  const [productId, setProductId] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function submit(e) {
+    e.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      await api.createTax({
+        name,
+        rate: parseFloat(rate),
+        tax_included: taxIncluded,
+        priority: Number(priority),
+        product_id: productId ? Number(productId) : null,
+      });
+      if (notify) notify(`Tax rule "${name}" created!`);
+      onCreated();
+    } catch (err) {
+      setError(err.message || "Failed to create tax rule");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <form className="modal" onSubmit={submit}>
+        <div className="modal-heading">
+          <div>
+            <h3>New tax rule</h3>
+            <p>Rules govern automatic line-item tax calculations on every invoice.</p>
+          </div>
+          <button type="button" className="icon-button" onClick={onClose}><X size={20} /></button>
+        </div>
+
+        {error && <div className="auth-error"><AlertCircle size={15} /> {error}</div>}
+
+        <label>
+          Rule name
+          <input type="text" placeholder="e.g. GST 18, VAT 5%, Exemption" value={name} onChange={(e) => setName(e.target.value)} required />
+        </label>
+
+        <div className="form-row-2">
+          <label>
+            Tax rate (%)
+            <input type="number" step="0.01" min="0" max="100" placeholder="18.0" value={rate} onChange={(e) => setRate(e.target.value)} required />
+          </label>
+          <label>
+            Evaluation priority
+            <input type="number" min="1" max="100" value={priority} onChange={(e) => setPriority(e.target.value)} required />
+          </label>
+        </div>
+
+        <label>
+          Applicable product (leave blank for Global)
+          <select value={productId} onChange={(e) => setProductId(e.target.value)}>
+            <option value="">Global (all products)</option>
+            {products.map((p) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+        </label>
+
+        <label style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "12px", cursor: "pointer", marginTop: "8px" }}>
+          <input type="checkbox" checked={taxIncluded} onChange={(e) => setTaxIncluded(e.target.checked)} />
+          <span><strong>Tax included in price</strong> (extracted from base price instead of added on top)</span>
+        </label>
+
+        <div className="modal-actions">
+          <button type="button" className="secondary-button" onClick={onClose} disabled={busy}>Cancel</button>
+          <button type="submit" className="primary-button" disabled={busy}>
+            {busy ? "Saving..." : "Save tax rule"}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function CreateDiscountModal({ products, onClose, onCreated, notify }) {
+  const [name, setName] = useState("");
+  const [type, setType] = useState("percentage");
+  const [value, setValue] = useState("");
+  const [scope, setScope] = useState("subscription");
+  const [minQty, setMinQty] = useState("");
+  const [minPurchase, setMinPurchase] = useState("");
+  const [startsAt, setStartsAt] = useState("");
+  const [endsAt, setEndsAt] = useState("");
+  const [usageLimit, setUsageLimit] = useState("");
+  const [productId, setProductId] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function submit(e) {
+    e.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      await api.createDiscount({
+        name,
+        type,
+        value: parseFloat(value),
+        scope,
+        min_quantity: minQty ? Number(minQty) : null,
+        min_purchase: minPurchase ? parseFloat(minPurchase) : null,
+        starts_at: startsAt || null,
+        ends_at: endsAt || null,
+        usage_limit: usageLimit ? Number(usageLimit) : null,
+        product_id: productId ? Number(productId) : null,
+      });
+      if (notify) notify(`Discount code "${name}" created!`);
+      onCreated();
+    } catch (err) {
+      setError(err.message || "Failed to create discount rule");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <form className="modal modal-wide" onSubmit={submit}>
+        <div className="modal-heading">
+          <div>
+            <h3>Create discount rule</h3>
+            <p>Rules apply automatically to eligible invoices and stop when expired or exhausted.</p>
+          </div>
+          <button type="button" className="icon-button" onClick={onClose}><X size={20} /></button>
+        </div>
+
+        {error && <div className="auth-error"><AlertCircle size={15} /> {error}</div>}
+
+        <div className="form-row-2">
+          <label>
+            Discount code / name
+            <input type="text" placeholder="e.g. SEAT-10, EARLYBIRD" value={name} onChange={(e) => setName(e.target.value)} required />
+          </label>
+          <label>
+            Discount type
+            <select value={type} onChange={(e) => setType(e.target.value)}>
+              <option value="percentage">Percentage (%) off</option>
+              <option value="fixed">Fixed amount (₹) off</option>
+            </select>
+          </label>
+        </div>
+
+        <div className="form-row-2">
+          <label>
+            Discount value ({type === "percentage" ? "%" : "₹"})
+            <input type="number" step="0.01" min="0" placeholder={type === "percentage" ? "10.0" : "500.00"} value={value} onChange={(e) => setValue(e.target.value)} required />
+          </label>
+          <label>
+            Scope
+            <select value={scope} onChange={(e) => setScope(e.target.value)}>
+              <option value="subscription">Whole subscription</option>
+              <option value="product">Specific product</option>
+            </select>
+          </label>
+        </div>
+
+        {scope === "product" && (
+          <label>
+            Target product
+            <select value={productId} onChange={(e) => setProductId(e.target.value)} required>
+              <option value="">Select a product...</option>
+              {products.map((p) => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+          </label>
+        )}
+
+        <div className="form-row-2">
+          <label>
+            Minimum seats / quantity (optional)
+            <input type="number" min="1" placeholder="e.g. 10" value={minQty} onChange={(e) => setMinQty(e.target.value)} />
+          </label>
+          <label>
+            Minimum purchase total (optional)
+            <input type="number" step="0.01" min="0" placeholder="e.g. 5000.00" value={minPurchase} onChange={(e) => setMinPurchase(e.target.value)} />
+          </label>
+        </div>
+
+        <div className="form-row-3">
+          <label>
+            Start date
+            <input type="date" value={startsAt} onChange={(e) => setStartsAt(e.target.value)} />
+          </label>
+          <label>
+            End date
+            <input type="date" value={endsAt} onChange={(e) => setEndsAt(e.target.value)} />
+          </label>
+          <label>
+            Usage limit (times)
+            <input type="number" min="1" placeholder="e.g. 100" value={usageLimit} onChange={(e) => setUsageLimit(e.target.value)} />
+          </label>
+        </div>
+
+        <div className="modal-actions">
+          <button type="button" className="secondary-button" onClick={onClose} disabled={busy}>Cancel</button>
+          <button type="submit" className="primary-button" disabled={busy}>
+            {busy ? "Saving..." : "Create discount rule"}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- plans & catalog hub
+function PlansPage({ plans, subscriptions, isStaff, isAdmin, onCreate, notify, onRefresh }) {
+  const [tab, setTab] = useState("plans"); // plans | products | taxes | discounts
+  const [products, setProducts] = useState([]);
+  const [taxes, setTaxes] = useState([]);
+  const [discounts, setDiscounts] = useState([]);
+  const [loadingExtras, setLoadingExtras] = useState(false);
+
+  // Modals state
+  const [createPlanOpen, setCreatePlanOpen] = useState(false);
+  const [createProdOpen, setCreateProdOpen] = useState(false);
+  const [variantProduct, setVariantProduct] = useState(null);
+  const [createTaxOpen, setCreateTaxOpen] = useState(false);
+  const [createDiscountOpen, setCreateDiscountOpen] = useState(false);
+
+  async function loadExtras() {
+    setLoadingExtras(true);
+    try {
+      const [prodRes, taxRes, discRes] = await Promise.allSettled([
+        api.products(),
+        api.taxes(),
+        api.discounts(),
+      ]);
+      if (prodRes.status === "fulfilled") setProducts(prodRes.value?.items || (Array.isArray(prodRes.value) ? prodRes.value : []));
+      if (taxRes.status === "fulfilled") setTaxes(Array.isArray(taxRes.value) ? taxRes.value : (taxRes.value?.items || []));
+      if (discRes.status === "fulfilled") setDiscounts(Array.isArray(discRes.value) ? discRes.value : (discRes.value?.items || []));
+    } catch (_) {}
+    finally {
+      setLoadingExtras(false);
+    }
+  }
+
+  useEffect(() => {
+    loadExtras();
+  }, [tab]);
+
+  async function handleTogglePlanStatus(plan) {
+    try {
+      if (plan.status === "active") {
+        await api.closePlan(plan.id);
+        if (notify) notify(`Plan "${plan.name}" closed`);
+      } else {
+        await api.reopenPlan(plan.id);
+        if (notify) notify(`Plan "${plan.name}" reopened`);
+      }
+      if (onRefresh) onRefresh();
+    } catch (err) {
+      if (notify) notify(err.message || "Failed to update plan status", "error");
+    }
+  }
+
+  async function handleDeleteVariant(variantId) {
+    if (!window.confirm("Delete this product variant?")) return;
+    try {
+      await api.deleteVariant(variantId);
+      if (notify) notify("Variant removed");
+      loadExtras();
+    } catch (err) {
+      if (notify) notify(err.message || "Failed to remove variant", "error");
+    }
+  }
+
+  return (
+    <div style={{ display: "grid", gap: "20px" }}>
+      {/* Subtab Navigation */}
+      <div className="subtab-nav">
+        <button
+          className={`subtab-btn ${tab === "plans" ? "active" : ""}`}
+          onClick={() => setTab("plans")}
+        >
+          <Layers size={16} /> Pricing Plans ({plans.length})
+        </button>
+        <button
+          className={`subtab-btn ${tab === "products" ? "active" : ""}`}
+          onClick={() => setTab("products")}
+        >
+          <Tag size={16} /> Products & Variants ({products.length})
+        </button>
+        <button
+          className={`subtab-btn ${tab === "taxes" ? "active" : ""}`}
+          onClick={() => setTab("taxes")}
+        >
+          <Receipt size={16} /> Tax Rules ({taxes.length})
+        </button>
+        <button
+          className={`subtab-btn ${tab === "discounts" ? "active" : ""}`}
+          onClick={() => setTab("discounts")}
+        >
+          <Percent size={16} /> Discount Rules ({discounts.length})
+        </button>
+      </div>
+
+      {/* TAB 1: PLANS */}
+      {tab === "plans" && (
+        <section className="panel full-panel">
+          <div className="panel-heading page-table-heading">
+            <div>
+              <h3>Subscription Plans & Pricing</h3>
+              <p>Billing frequencies, availability schedules, and lifecycle policies.</p>
             </div>
-            <h3>{plan.name}</h3>
-            <p>
-              {titleCase(plan.cycle)} billing · minimum {plan.minQuantity}
-            </p>
-            <div className="plan-price">
-              <strong>{formatMoney(plan.price)}</strong>
-              <span>/ {CYCLE_LABEL[plan.cycle] || plan.cycle}</span>
-            </div>
-            <div className="plan-divider" />
-            <h4>Plan rules</h4>
-            <div className="feature-line">
-              <CircleCheck size={16} /> {plan.allowPause ? "Pause allowed" : "Pause disabled"}
-            </div>
-            <div className="feature-line">
-              <CircleCheck size={16} /> {plan.allowRenew ? "Renewal allowed" : "Renewal disabled"}
-            </div>
-            <div className="feature-line">
-              <CircleCheck size={16} />{" "}
-              {plan.autoClose ? "Auto-closes at expiry" : "Billing may continue after expiry"}
-            </div>
-            <div className="feature-line">
-              <CircleCheck size={16} /> Early close{" "}
-              {plan.allowEarlyClose ? "allowed" : "blocked"}
-            </div>
-            <p className="plan-availability">
-              {plan.availableFrom || plan.availableTo
-                ? `Available ${formatDate(plan.availableFrom)} – ${formatDate(plan.availableTo)}`
-                : "Always available"}
-            </p>
-            {isStaff && (
-              <button
-                className="plan-action"
-                onClick={() => onCreate(plan.id)}
-                disabled={!available}
-              >
-                {available ? "Create subscription" : "Plan closed"} <ArrowRight size={15} />
+            {isAdmin && (
+              <button className="primary-button" onClick={() => setCreatePlanOpen(true)}>
+                <Plus size={16} /> Create new plan
               </button>
             )}
           </div>
-        );
-      })}
+
+          <div className="plans-grid" style={{ padding: "16px 20px" }}>
+            {plans.map((plan, index) => {
+              const activeCount = subscriptions.filter(
+                (subscription) => subscription.planId === plan.id && subscription.status === "active",
+              ).length;
+              const color = PLAN_COLORS[index % PLAN_COLORS.length];
+              const available = plan.status === "active";
+
+              return (
+                <div className={`plan-card ${color}`} key={plan.id}>
+                  <div className="plan-card-top">
+                    <span className="plan-symbol">
+                      <Zap size={19} />
+                    </span>
+                    <span className="plan-count">{activeCount} active</span>
+                  </div>
+                  <h3>{plan.name}</h3>
+                  <p>
+                    {titleCase(plan.cycle)} billing · minimum {plan.minQuantity}
+                  </p>
+                  <div className="plan-price">
+                    <strong>{formatMoney(plan.price)}</strong>
+                    <span>/ {CYCLE_LABEL[plan.cycle] || plan.cycle}</span>
+                  </div>
+                  <div className="plan-divider" />
+                  <h4>Plan rules</h4>
+                  <div className="feature-line">
+                    <CircleCheck size={16} /> {plan.allowPause ? "Pause allowed" : "Pause disabled"}
+                  </div>
+                  <div className="feature-line">
+                    <CircleCheck size={16} /> {plan.allowRenew ? "Renewal allowed" : "Renewal disabled"}
+                  </div>
+                  <div className="feature-line">
+                    <CircleCheck size={16} />{" "}
+                    {plan.autoClose ? "Auto-closes at expiry" : "Continues billing after expiry"}
+                  </div>
+                  <div className="feature-line">
+                    <CircleCheck size={16} /> Early cancellation{" "}
+                    {plan.allowEarlyClose ? "allowed" : "blocked"}
+                  </div>
+                  <p className="plan-availability">
+                    {plan.availableFrom || plan.availableTo
+                      ? `Available ${formatDate(plan.availableFrom)} – ${formatDate(plan.availableTo)}`
+                      : "Always available"}
+                  </p>
+
+                  <div style={{ display: "flex", gap: "8px", marginTop: "14px", flexWrap: "wrap" }}>
+                    {isStaff && (
+                      <button
+                        className="plan-action"
+                        style={{ flex: 1 }}
+                        onClick={() => onCreate(plan.id)}
+                        disabled={!available}
+                      >
+                        {available ? "Create subscription" : "Plan closed"} <ArrowRight size={15} />
+                      </button>
+                    )}
+                    {isAdmin && (
+                      <button
+                        className={`btn-sm ${available ? "btn-danger" : "btn-success"}`}
+                        onClick={() => handleTogglePlanStatus(plan)}
+                      >
+                        {available ? "Close plan" : "Reopen plan"}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {/* TAB 2: PRODUCTS & VARIANTS */}
+      {tab === "products" && (
+        <section className="panel full-panel">
+          <div className="panel-heading page-table-heading">
+            <div>
+              <h3>Products & Variants</h3>
+              <p>Manage subscription items, add-on features, and pricing variant deltas (e.g. Brand: Odoo +₹560).</p>
+            </div>
+            {isAdmin && (
+              <button className="primary-button" onClick={() => setCreateProdOpen(true)}>
+                <Plus size={16} /> Add product
+              </button>
+            )}
+          </div>
+
+          <div className="table-scroll">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Product name</th>
+                  <th>Type</th>
+                  <th>Sales price</th>
+                  <th>Cost price</th>
+                  <th>Variants & modifiers</th>
+                  <th>Status</th>
+                  <th style={{ textAlign: "right" }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loadingExtras ? (
+                  <tr>
+                    <td colSpan={7} className="table-loading">
+                      <RefreshCw size={18} className="spin" /> Loading product catalog…
+                    </td>
+                  </tr>
+                ) : products.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="empty-state">No products found.</td>
+                  </tr>
+                ) : (
+                  products.map((p) => {
+                    const variants = p.variants || [];
+                    return (
+                      <tr key={p.id}>
+                        <td>
+                          <strong>{p.name}</strong>
+                          {p.notes && <div className="muted" style={{ fontSize: "10px" }}>{p.notes}</div>}
+                        </td>
+                        <td>
+                          <span className="tag-pill">{p.type.toUpperCase()}</span>
+                        </td>
+                        <td><strong>{formatMoney(p.sales_price)}</strong></td>
+                        <td>{p.cost_price ? formatMoney(p.cost_price) : "—"}</td>
+                        <td>
+                          {variants.length === 0 ? (
+                            <span className="muted">No variants</span>
+                          ) : (
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: "4px" }}>
+                              {variants.map((v) => (
+                                <span className="variant-chip" key={v.id}>
+                                  {v.attribute}: {v.value} ({parseFloat(v.price_delta) >= 0 ? `+${formatMoney(v.price_delta)}` : formatMoney(v.price_delta)})
+                                  {isAdmin && (
+                                    <button className="delete-btn" title="Delete variant" onClick={() => handleDeleteVariant(v.id)}>
+                                      <X size={11} />
+                                    </button>
+                                  )}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </td>
+                        <td>
+                          <Status value={p.is_active ? "active" : "disabled"} />
+                        </td>
+                        <td style={{ textAlign: "right" }}>
+                          {isAdmin && (
+                            <button className="btn-sm secondary-button" onClick={() => setVariantProduct(p)}>
+                              <Plus size={12} /> Add variant
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      {/* TAB 3: TAX RULES */}
+      {tab === "taxes" && (
+        <section className="panel full-panel">
+          <div className="panel-heading page-table-heading">
+            <div>
+              <h3>Tax Rules & Invoicing Engines</h3>
+              <p>Automatic tax rates applied per line item based on global rules or product specificity.</p>
+            </div>
+            {isAdmin && (
+              <button className="primary-button" onClick={() => setCreateTaxOpen(true)}>
+                <Plus size={16} /> New tax rule
+              </button>
+            )}
+          </div>
+
+          <div className="table-scroll">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Rule name</th>
+                  <th>Rate</th>
+                  <th>Tax inclusion</th>
+                  <th>Priority</th>
+                  <th>Product scope</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loadingExtras ? (
+                  <tr>
+                    <td colSpan={6} className="table-loading">
+                      <RefreshCw size={18} className="spin" /> Loading tax rules…
+                    </td>
+                  </tr>
+                ) : taxes.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="empty-state">No tax rules configured.</td>
+                  </tr>
+                ) : (
+                  taxes.map((t) => (
+                    <tr key={t.id}>
+                      <td><strong>{t.name}</strong></td>
+                      <td><strong>{t.rate}%</strong></td>
+                      <td>
+                        <span className={`tag-pill ${t.tax_included ? "badge-risk-low" : ""}`}>
+                          {t.tax_included ? "Included in price" : "Added on top"}
+                        </span>
+                      </td>
+                      <td>Priority {t.priority}</td>
+                      <td>
+                        {t.product_id
+                          ? (products.find((p) => p.id === t.product_id)?.name || `Product #${t.product_id}`)
+                          : "Global (All Products)"}
+                      </td>
+                      <td><Status value={t.is_active ? "active" : "disabled"} /></td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      {/* TAB 4: DISCOUNT RULES */}
+      {tab === "discounts" && (
+        <section className="panel full-panel">
+          <div className="panel-heading page-table-heading">
+            <div>
+              <h3>Discount Rules & Volume Pricing</h3>
+              <p>Promotional codes, volume seat tiers, and contract discounts evaluated on billing day.</p>
+            </div>
+            {isAdmin && (
+              <button className="primary-button" onClick={() => setCreateDiscountOpen(true)}>
+                <Plus size={16} /> New discount rule
+              </button>
+            )}
+          </div>
+
+          <div className="table-scroll">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Discount code</th>
+                  <th>Type & Value</th>
+                  <th>Scope</th>
+                  <th>Minimum condition</th>
+                  <th>Validity period</th>
+                  <th>Usage tracking</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loadingExtras ? (
+                  <tr>
+                    <td colSpan={7} className="table-loading">
+                      <RefreshCw size={18} className="spin" /> Loading discounts…
+                    </td>
+                  </tr>
+                ) : discounts.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="empty-state">No discount rules found.</td>
+                  </tr>
+                ) : (
+                  discounts.map((d) => (
+                    <tr key={d.id}>
+                      <td><strong>{d.name}</strong></td>
+                      <td>
+                        <strong>{d.type === "percentage" ? `${d.value}% OFF` : `₹${d.value} OFF`}</strong>
+                      </td>
+                      <td>
+                        <span className="tag-pill">{d.scope.toUpperCase()}</span>
+                      </td>
+                      <td>
+                        {d.min_quantity ? `≥ ${d.min_quantity} seats` : ""}
+                        {d.min_purchase ? ` (min ₹${d.min_purchase})` : ""}
+                        {!d.min_quantity && !d.min_purchase && "No minimum"}
+                      </td>
+                      <td>
+                        {d.starts_at || d.ends_at
+                          ? `${d.starts_at ? formatDate(d.starts_at) : "Any"} – ${d.ends_at ? formatDate(d.ends_at) : "Forever"}`
+                          : "Always valid"}
+                      </td>
+                      <td>
+                        <span className="tag-pill" style={{ background: d.usage_limit && d.used_count >= d.usage_limit ? "#fee2e2" : "#e0eee5" }}>
+                          {d.used_count || 0} {d.usage_limit ? `/ ${d.usage_limit}` : "uses"}
+                        </span>
+                      </td>
+                      <td><Status value={d.is_active ? "active" : "disabled"} /></td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      {/* Modals */}
+      {createPlanOpen && (
+        <CreatePlanModal
+          onClose={() => setCreatePlanOpen(false)}
+          onCreated={() => { setCreatePlanOpen(false); if (onRefresh) onRefresh(); }}
+          notify={notify}
+        />
+      )}
+
+      {createProdOpen && (
+        <CreateProductModal
+          onClose={() => setCreateProdOpen(false)}
+          onCreated={() => { setCreateProdOpen(false); loadExtras(); if (onRefresh) onRefresh(); }}
+          notify={notify}
+        />
+      )}
+
+      {variantProduct && (
+        <CreateVariantModal
+          product={variantProduct}
+          onClose={() => setVariantProduct(null)}
+          onCreated={() => { setVariantProduct(null); loadExtras(); }}
+          notify={notify}
+        />
+      )}
+
+      {createTaxOpen && (
+        <CreateTaxModal
+          products={products}
+          onClose={() => setCreateTaxOpen(false)}
+          onCreated={() => { setCreateTaxOpen(false); loadExtras(); }}
+          notify={notify}
+        />
+      )}
+
+      {createDiscountOpen && (
+        <CreateDiscountModal
+          products={products}
+          onClose={() => setCreateDiscountOpen(false)}
+          onCreated={() => { setCreateDiscountOpen(false); loadExtras(); }}
+          notify={notify}
+        />
+      )}
     </div>
   );
 }
 
 // ---------------------------------------------------------------- customers
-function CustomersPage({ customers, subscriptions }) {
+function CreateCustomerModal({ onClose, onCreated, notify }) {
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function submit(e) {
+    e.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      await api.createCustomer({ name, email, password });
+      if (notify) notify(`Customer account for ${name} created!`);
+      onCreated();
+    } catch (err) {
+      setError(err.message || "Failed to create customer");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <form className="modal" onSubmit={submit}>
+        <div className="modal-heading">
+          <div>
+            <h3>Add customer account</h3>
+            <p>Create a customer profile and credentials for portal access.</p>
+          </div>
+          <button type="button" className="icon-button" onClick={onClose}><X size={20} /></button>
+        </div>
+
+        {error && <div className="auth-error"><AlertCircle size={15} /> {error}</div>}
+
+        <label>
+          Company / customer name
+          <input type="text" placeholder="e.g. Acme Technologies Ltd" value={name} onChange={(e) => setName(e.target.value)} required />
+        </label>
+
+        <label>
+          Email address
+          <input type="email" placeholder="owner@acme.io" value={email} onChange={(e) => setEmail(e.target.value)} required />
+        </label>
+
+        <label>
+          Temporary password
+          <input type="password" placeholder="Must meet complexity rules" value={password} onChange={(e) => setPassword(e.target.value)} required />
+        </label>
+
+        <div className="modal-actions">
+          <button type="button" className="secondary-button" onClick={onClose} disabled={busy}>Cancel</button>
+          <button type="submit" className="primary-button" disabled={busy}>
+            {busy ? "Creating..." : "Create customer"}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function CustomersPage({ customers, subscriptions, isAdmin, onRefresh, notify }) {
+  const [createOpen, setCreateOpen] = useState(false);
+
+  async function handleToggleStatus(customer) {
+    try {
+      await api.updateCustomer(customer.id, { is_active: !customer.active });
+      if (notify) notify(`Customer ${customer.name} ${customer.active ? "disabled" : "activated"}`);
+      if (onRefresh) onRefresh();
+    } catch (err) {
+      if (notify) notify(err.message || "Failed to update customer status", "error");
+    }
+  }
+
   if (!customers.length) {
     return (
       <section className="panel full-panel">
@@ -916,22 +2012,40 @@ function CustomersPage({ customers, subscriptions }) {
             <h3>Customers</h3>
             <p>Customer accounts are created through registration or the admin API.</p>
           </div>
+          {isAdmin && (
+            <button className="primary-button" onClick={() => setCreateOpen(true)}>
+              <Plus size={16} /> Add customer
+            </button>
+          )}
         </div>
         <p className="empty-state">No customer accounts returned by the backend yet.</p>
+        {createOpen && (
+          <CreateCustomerModal
+            onClose={() => setCreateOpen(false)}
+            onCreated={() => { setCreateOpen(false); if (onRefresh) onRefresh(); }}
+            notify={notify}
+          />
+        )}
       </section>
     );
   }
 
   return (
     <section className="panel full-panel">
-      <div className="panel-heading">
+      <div className="panel-heading page-table-heading">
         <div>
-          <h3>Customers</h3>
+          <h3>Customers & Accounts</h3>
           <p>Directory of customer accounts and their active subscriptions.</p>
         </div>
+        {isAdmin && (
+          <button className="primary-button" onClick={() => setCreateOpen(true)}>
+            <Plus size={16} /> Add customer
+          </button>
+        )}
       </div>
+
       <div className="table-scroll">
-        <table>
+        <table className="data-table">
           <thead>
             <tr>
               <th>Customer</th>
@@ -939,6 +2053,7 @@ function CustomersPage({ customers, subscriptions }) {
               <th>Plans</th>
               <th>Joined</th>
               <th>Status</th>
+              {isAdmin && <th style={{ textAlign: "right" }}>Actions</th>}
             </tr>
           </thead>
           <tbody>
@@ -962,18 +2077,467 @@ function CustomersPage({ customers, subscriptions }) {
                       </div>
                     </div>
                   </td>
-                  <td>{activeSubs.length}</td>
+                  <td><strong>{activeSubs.length}</strong></td>
                   <td>{plans.length ? plans.join(", ") : "—"}</td>
                   <td>{formatDate(customer.joined)}</td>
                   <td>
                     <Status value={customer.active ? "active" : "disabled"} />
                   </td>
+                  {isAdmin && (
+                    <td style={{ textAlign: "right" }}>
+                      <button
+                        className={`btn-sm ${customer.active ? "btn-danger" : "btn-success"}`}
+                        onClick={() => handleToggleStatus(customer)}
+                      >
+                        {customer.active ? "Deactivate" : "Activate"}
+                      </button>
+                    </td>
+                  )}
                 </tr>
               );
             })}
           </tbody>
         </table>
       </div>
+
+      {createOpen && (
+        <CreateCustomerModal
+          onClose={() => setCreateOpen(false)}
+          onCreated={() => { setCreateOpen(false); if (onRefresh) onRefresh(); }}
+          notify={notify}
+        />
+      )}
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------- quotations
+function CreateQuotationModal({ customers, plans, products, onClose, onCreated }) {
+  const [customerId, setCustomerId] = useState(customers[0]?.id || "");
+  const [planId, setPlanId] = useState(plans[0]?.id || "");
+  const [productId, setProductId] = useState(products[0]?.id || "");
+  const [quantity, setQuantity] = useState(1);
+  const [validityDays, setValidityDays] = useState(30);
+  const [notes, setNotes] = useState("");
+  const [templates, setTemplates] = useState([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    api.quoteTemplates().then((res) => {
+      if (Array.isArray(res)) setTemplates(res);
+    }).catch(() => {});
+  }, []);
+
+  async function submit(e) {
+    e.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      const payload = {
+        customer_id: Number(customerId),
+        plan_id: planId ? Number(planId) : undefined,
+        template_id: selectedTemplateId ? Number(selectedTemplateId) : undefined,
+        validity_days: Number(validityDays),
+        notes: notes || undefined,
+        lines: [
+          {
+            product_id: Number(productId),
+            quantity: Number(quantity),
+          },
+        ],
+      };
+      await api.createQuotation(payload);
+      onCreated();
+    } catch (err) {
+      setError(err.message || "Failed to create quotation");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div
+      className="modal-overlay"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <form className="modal" onSubmit={submit}>
+        <div className="modal-heading">
+          <div>
+            <h3>New quotation</h3>
+            <p>Draft a formal proposal for a customer.</p>
+          </div>
+          <button type="button" className="icon-button" onClick={onClose}>
+            <X size={20} />
+          </button>
+        </div>
+
+        {templates.length > 0 && (
+          <label>
+            Template (optional)
+            <select
+              value={selectedTemplateId}
+              onChange={(e) => {
+                const val = e.target.value;
+                setSelectedTemplateId(val);
+                const t = templates.find((item) => item.id === Number(val));
+                if (t?.plan_id) setPlanId(t.plan_id);
+              }}
+            >
+              <option value="">Start from scratch</option>
+              {templates.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+
+        <label>
+          Customer
+          <select value={customerId} onChange={(e) => setCustomerId(e.target.value)} required>
+            {customers.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name} ({c.email})
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label>
+          Plan
+          <select value={planId} onChange={(e) => setPlanId(e.target.value)}>
+            <option value="">No specific plan</option>
+            {plans.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name} ({formatMoney(p.price)}/{p.cycle})
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <div className="form-row">
+          <label>
+            Primary product
+            <select value={productId} onChange={(e) => setProductId(e.target.value)} required>
+              {products.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Quantity
+            <input
+              type="number"
+              min="1"
+              value={quantity}
+              onChange={(e) => setQuantity(e.target.value)}
+              required
+            />
+          </label>
+        </div>
+
+        <label>
+          Validity (days)
+          <input
+            type="number"
+            min="1"
+            max="365"
+            value={validityDays}
+            onChange={(e) => setValidityDays(e.target.value)}
+          />
+        </label>
+
+        <label>
+          Proposal notes / terms
+          <textarea
+            rows="2"
+            value={notes}
+            placeholder="Special commercial terms, payment notes, etc."
+            onChange={(e) => setNotes(e.target.value)}
+          />
+        </label>
+
+        {error && (
+          <div className="auth-error">
+            <AlertCircle size={15} /> {error}
+          </div>
+        )}
+
+        <div className="modal-actions">
+          <button type="button" className="secondary-button" onClick={onClose} disabled={busy}>
+            Cancel
+          </button>
+          <button type="submit" className="primary-button" disabled={busy}>
+            {busy ? "Drafting..." : "Create quotation"}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function QuotationsPage({ user, isStaff, plans, customers, products, notify, onSelectSub }) {
+  const [quotations, setQuotations] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [filter, setFilter] = useState("all");
+  const [actionId, setActionId] = useState(null);
+  const [createOpen, setCreateOpen] = useState(false);
+
+  async function loadQuotations() {
+    setLoading(true);
+    setError(null);
+    try {
+      let q = "";
+      if (filter !== "all") q = `status=${filter}`;
+      const res = await api.quotations(q);
+      setQuotations(res?.items || (Array.isArray(res) ? res : []));
+    } catch (err) {
+      setError(err.message || "Failed to load quotations");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadQuotations();
+  }, [filter]);
+
+  async function handleSend(id) {
+    setActionId(id);
+    try {
+      await api.sendQuotation(id);
+      if (notify) notify("Quotation sent to customer");
+      loadQuotations();
+    } catch (err) {
+      if (notify) notify(err.message || "Failed to send quotation", "error");
+    } finally {
+      setActionId(null);
+    }
+  }
+
+  async function handleConfirm(id) {
+    setActionId(id);
+    try {
+      const res = await api.confirmQuotation(id);
+      if (notify) notify("Quotation accepted & subscription created!");
+      loadQuotations();
+      if (res?.subscription && onSelectSub) {
+        onSelectSub(res.subscription);
+      }
+    } catch (err) {
+      if (notify) notify(err.message || "Failed to confirm quotation", "error");
+    } finally {
+      setActionId(null);
+    }
+  }
+
+  async function handleCancel(id) {
+    if (!window.confirm("Cancel this quotation?")) return;
+    setActionId(id);
+    try {
+      await api.cancelQuotation(id);
+      if (notify) notify("Quotation cancelled");
+      loadQuotations();
+    } catch (err) {
+      if (notify) notify(err.message || "Failed to cancel quotation", "error");
+    } finally {
+      setActionId(null);
+    }
+  }
+
+  async function handleDownload(q) {
+    setActionId(`pdf-${q.id}`);
+    try {
+      await api.downloadQuotationPdf(q.id, `${q.number || `QUO-${q.id}`}.pdf`);
+    } catch (err) {
+      if (notify) notify(err.message || "Failed to download quotation PDF", "error");
+    } finally {
+      setActionId(null);
+    }
+  }
+
+  return (
+    <section className="panel full-panel">
+      <div className="panel-heading page-table-heading">
+        <div>
+          <h3>{isStaff ? "Quotations & proposals" : "My quotations"}</h3>
+          <p>{isStaff ? "Draft, publish, and convert quotations into active subscriptions." : "Review and accept quotations sent by the sales team."}</p>
+        </div>
+        {isStaff && (
+          <button className="primary-button" onClick={() => setCreateOpen(true)}>
+            <Plus size={16} /> New quotation
+          </button>
+        )}
+      </div>
+
+      <div className="filter-row">
+        {["all", "draft", "sent", "confirmed", "cancelled"].map((tab) => (
+          <button
+            key={tab}
+            className={filter === tab ? "filter-tab selected" : "filter-tab"}
+            onClick={() => setFilter(tab)}
+          >
+            {tab.charAt(0).toUpperCase() + tab.slice(1)}
+          </button>
+        ))}
+      </div>
+
+      {error && (
+        <div className="banner banner-error">
+          <AlertCircle size={16} />
+          <div>{error}</div>
+          <button onClick={loadQuotations}>Retry</button>
+        </div>
+      )}
+
+      <div className="table-scroll">
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>Quotation #</th>
+              <th>Customer</th>
+              <th>Plan</th>
+              <th>Valid until</th>
+              <th>Total amount</th>
+              <th>Status</th>
+              <th style={{ textAlign: "right" }}>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (
+              <tr>
+                <td colSpan={7} className="table-loading">
+                  <RefreshCw size={18} className="spin" /> Loading quotations…
+                </td>
+              </tr>
+            ) : quotations.length === 0 ? (
+              <tr>
+                <td colSpan={7} className="empty-state">
+                  No quotations found.
+                </td>
+              </tr>
+            ) : (
+              quotations.map((q) => {
+                const customerName = q.customer_name || (customers.find(c => c.id === q.customer_id)?.name) || `Customer #${q.customer_id}`;
+                const planName = q.plan_name || (plans.find(p => p.id === q.plan_id)?.name) || "Custom plan";
+                return (
+                  <tr key={q.id}>
+                    <td>
+                      <strong>{q.number}</strong>
+                    </td>
+                    <td>{customerName}</td>
+                    <td>{planName}</td>
+                    <td>{q.valid_until ? formatDate(q.valid_until) : "—"}</td>
+                    <td>
+                      <strong>{formatMoney(q.total || 0)}</strong>
+                    </td>
+                    <td>
+                      <Status value={q.status} />
+                    </td>
+                    <td style={{ textAlign: "right" }}>
+                      <div className="table-actions">
+                        <button
+                          className="icon-button"
+                          onClick={() => handleDownload(q)}
+                          disabled={actionId === `pdf-${q.id}`}
+                          title="Download PDF Quotation"
+                        >
+                          <Download size={15} />
+                        </button>
+
+                        {/* Customer Accept */}
+                        {!isStaff && q.status === "sent" && (
+                          <button
+                            className="btn-sm btn-success"
+                            onClick={() => handleConfirm(q.id)}
+                            disabled={actionId === q.id}
+                            title="Accept this quotation"
+                          >
+                            <Check size={12} /> Accept quotation
+                          </button>
+                        )}
+
+                        {/* Staff actions */}
+                        {isStaff && q.status === "draft" && (
+                          <>
+                            <button
+                              className="btn-sm secondary-button"
+                              onClick={() => handleSend(q.id)}
+                              disabled={actionId === q.id}
+                              title="Send quotation to customer"
+                            >
+                              <Send size={12} /> Send
+                            </button>
+                            <button
+                              className="btn-sm btn-success"
+                              onClick={() => handleConfirm(q.id)}
+                              disabled={actionId === q.id}
+                              title="Confirm directly into subscription"
+                            >
+                              <Check size={12} /> Confirm
+                            </button>
+                            <button
+                              className="btn-sm btn-danger"
+                              onClick={() => handleCancel(q.id)}
+                              disabled={actionId === q.id}
+                              title="Cancel quotation"
+                            >
+                              <X size={12} />
+                            </button>
+                          </>
+                        )}
+
+                        {isStaff && q.status === "sent" && (
+                          <>
+                            <button
+                              className="btn-sm btn-success"
+                              onClick={() => handleConfirm(q.id)}
+                              disabled={actionId === q.id}
+                              title="Confirm quotation"
+                            >
+                              <Check size={12} /> Confirm
+                            </button>
+                            <button
+                              className="btn-sm btn-danger"
+                              onClick={() => handleCancel(q.id)}
+                              disabled={actionId === q.id}
+                              title="Cancel quotation"
+                            >
+                              <X size={12} />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {createOpen && (
+        <CreateQuotationModal
+          customers={customers}
+          plans={plans}
+          products={products}
+          onClose={() => setCreateOpen(false)}
+          onCreated={() => {
+            setCreateOpen(false);
+            loadQuotations();
+            if (notify) notify("Quotation drafted successfully!");
+          }}
+        />
+      )}
     </section>
   );
 }
@@ -1193,7 +2757,7 @@ function InvoicesPage({ user, isStaff, notify }) {
 
   return (
     <section className="panel full-panel">
-      <div className="panel-heading">
+      <div className="panel-heading page-table-heading">
         <div>
           <h3>Invoices & Billing Operations</h3>
           <p>
@@ -1202,7 +2766,7 @@ function InvoicesPage({ user, isStaff, notify }) {
               : "Review your invoices, download official PDFs, and track payment receipts."}
           </p>
         </div>
-        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" }}>
           {isStaff && (
             <>
               <button
@@ -1254,7 +2818,7 @@ function InvoicesPage({ user, isStaff, notify }) {
       )}
 
       {/* Filter Tabs */}
-      <div style={{ display: "flex", gap: "6px", padding: "12px 22px", borderBottom: "1px solid #edf0ee" }}>
+      <div className="filter-row">
         {[
           { id: "all", label: "All Invoices" },
           { id: "confirmed", label: "Confirmed" },
@@ -1265,14 +2829,7 @@ function InvoicesPage({ user, isStaff, notify }) {
           <button
             key={t.id}
             onClick={() => setFilter(t.id)}
-            className="secondary-button"
-            style={{
-              padding: "6px 12px",
-              background: filter === t.id ? "#eaf6ee" : "white",
-              color: filter === t.id ? "#128653" : "#64736b",
-              borderColor: filter === t.id ? "#159b65" : "#e4eae6",
-              fontWeight: filter === t.id ? "700" : "550",
-            }}
+            className={filter === t.id ? "filter-tab selected" : "filter-tab"}
           >
             {t.label}
           </button>
@@ -1696,59 +3253,294 @@ function AnalyticsPage({ subscriptions, isStaff, notify }) {
 
 
 // ---------------------------------------------------------------- settings
-function SettingsPage({ user, roleLabel, lastSynced, loading, onRefresh, onLogout }) {
+function SettingsPage({ user, roleLabel, lastSynced, loading, onRefresh, onLogout, notify }) {
+  const [currPassword, setCurrPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [pwdBusy, setPwdBusy] = useState(false);
+  const [pwdMsg, setPwdMsg] = useState({ text: "", error: false });
+
+  // Admin staff management
+  const [staff, setStaff] = useState([]);
+  const [staffLoading, setStaffLoading] = useState(false);
+  const [newStaffName, setNewStaffName] = useState("");
+  const [newStaffEmail, setNewStaffEmail] = useState("");
+  const [newStaffPassword, setNewStaffPassword] = useState("");
+  const [addStaffOpen, setAddStaffOpen] = useState(false);
+  const [staffBusy, setStaffBusy] = useState(false);
+
+  const isAdmin = user.role === "admin";
+
+  useEffect(() => {
+    if (isAdmin) {
+      loadStaff();
+    }
+  }, [isAdmin]);
+
+  async function loadStaff() {
+    setStaffLoading(true);
+    try {
+      const res = await api.staffList();
+      setStaff(res?.items || (Array.isArray(res) ? res : []));
+    } catch (_) {}
+    finally {
+      setStaffLoading(false);
+    }
+  }
+
+  async function handlePasswordChange(e) {
+    e.preventDefault();
+    setPwdBusy(true);
+    setPwdMsg({ text: "", error: false });
+    try {
+      await api.changePassword({ current_password: currPassword, new_password: newPassword });
+      setPwdMsg({ text: "Password updated successfully!", error: false });
+      setCurrPassword("");
+      setNewPassword("");
+      if (notify) notify("Password updated successfully!");
+    } catch (err) {
+      setPwdMsg({ text: err.message || "Failed to update password", error: true });
+    } finally {
+      setPwdBusy(false);
+    }
+  }
+
+  async function handleToggleStaff(s) {
+    try {
+      await api.updateStaff(s.id, { is_active: !s.is_active });
+      loadStaff();
+      if (notify) notify(`Staff ${s.name} ${!s.is_active ? "activated" : "deactivated"}`);
+    } catch (err) {
+      if (notify) notify(err.message || "Failed to update staff status", "error");
+    }
+  }
+
+  async function handleCreateStaff(e) {
+    e.preventDefault();
+    setStaffBusy(true);
+    try {
+      await api.createStaff({ name: newStaffName, email: newStaffEmail, password: newStaffPassword });
+      setAddStaffOpen(false);
+      setNewStaffName("");
+      setNewStaffEmail("");
+      setNewStaffPassword("");
+      loadStaff();
+      if (notify) notify("Staff member added successfully!");
+    } catch (err) {
+      if (notify) notify(err.message || "Failed to add staff member", "error");
+    } finally {
+      setStaffBusy(false);
+    }
+  }
+
   return (
-    <section className="panel settings-panel">
-      <h3>Account & connection</h3>
-      <p>This workspace reads live data from the FastAPI backend.</p>
+    <div style={{ display: "grid", gap: "22px" }}>
+      <section className="panel settings-panel">
+        <h3>Account & connection</h3>
+        <p>This workspace reads live data from the FastAPI backend.</p>
 
-      <div className="settings-row">
-        <div>
-          <strong>Signed in as</strong>
-          <span>{user.email}</span>
+        <div className="settings-row">
+          <div>
+            <strong>Signed in as</strong>
+            <span>{user.email}</span>
+          </div>
+          <span className="role-badge">{roleLabel}</span>
         </div>
-        <span className="role-badge">{roleLabel}</span>
-      </div>
 
-      <div className="settings-row">
-        <div>
-          <strong>API base</strong>
-          <span>Every request is authenticated with your JWT.</span>
+        <div className="settings-row">
+          <div>
+            <strong>API base</strong>
+            <span>Every request is authenticated with your JWT.</span>
+          </div>
+          <code>{API_BASE}</code>
         </div>
-        <code>{API_BASE}</code>
-      </div>
 
-      <div className="settings-row">
-        <div>
-          <strong>Live data</strong>
-          <span>{lastSynced ? `Last synced at ${formatTime(lastSynced)}` : "Not synced yet"}</span>
+        <div className="settings-row">
+          <div>
+            <strong>Live data</strong>
+            <span>{lastSynced ? `Last synced at ${formatTime(lastSynced)}` : "Not synced yet"}</span>
+          </div>
+          <button className="secondary-button" onClick={onRefresh} disabled={loading}>
+            <RefreshCw size={15} className={loading ? "spin" : ""} />{" "}
+            {loading ? "Refreshing…" : "Refresh"}
+          </button>
         </div>
-        <button className="secondary-button" onClick={onRefresh} disabled={loading}>
-          <RefreshCw size={15} className={loading ? "spin" : ""} />{" "}
-          {loading ? "Refreshing…" : "Refresh"}
+
+        <div className="settings-row">
+          <div>
+            <strong>Currency</strong>
+            <span>Money is rendered from backend Decimal values.</span>
+          </div>
+          <span>INR (₹)</span>
+        </div>
+
+        <div className="settings-row">
+          <div>
+            <strong>Permissions</strong>
+            <span>Backend-enforced; hidden buttons are UX only.</span>
+          </div>
+          <span>{roleLabel}</span>
+        </div>
+
+        <button className="secondary-button" onClick={onLogout}>
+          <LogOut size={15} /> Sign out
         </button>
-      </div>
+      </section>
 
-      <div className="settings-row">
-        <div>
-          <strong>Currency</strong>
-          <span>Money is rendered from backend Decimal values.</span>
-        </div>
-        <span>INR (₹)</span>
-      </div>
+      {/* Security & Password */}
+      <section className="panel settings-panel">
+        <h3>Security & credentials</h3>
+        <p>Update your account access password.</p>
 
-      <div className="settings-row">
-        <div>
-          <strong>Permissions</strong>
-          <span>Backend-enforced; hidden buttons are UX only.</span>
-        </div>
-        <span>{roleLabel}</span>
-      </div>
+        {pwdMsg.text && (
+          <div className={`banner ${pwdMsg.error ? "banner-error" : "banner-info"}`}>
+            {pwdMsg.error ? <AlertCircle size={16} /> : <CircleCheck size={16} />}
+            <div>{pwdMsg.text}</div>
+          </div>
+        )}
 
-      <button className="secondary-button" onClick={onLogout}>
-        <LogOut size={15} /> Sign out
-      </button>
-    </section>
+        <form onSubmit={handlePasswordChange} style={{ display: "grid", gap: "12px", maxWidth: "420px", marginTop: "12px" }}>
+          <label>
+            Current password
+            <input
+              type="password"
+              value={currPassword}
+              onChange={(e) => setCurrPassword(e.target.value)}
+              required
+            />
+          </label>
+          <label>
+            New password
+            <input
+              type="password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              placeholder="9+ chars, 1 upper, 1 lower, 1 special"
+              required
+            />
+          </label>
+          <button type="submit" className="primary-button" disabled={pwdBusy} style={{ justifySelf: "start" }}>
+            {pwdBusy ? "Updating..." : "Update password"}
+          </button>
+        </form>
+      </section>
+
+      {/* Admin: Staff Team Management */}
+      {isAdmin && (
+        <section className="panel full-panel">
+          <div className="panel-heading">
+            <div>
+              <h3>Staff team management</h3>
+              <p>Configure staff credentials and active roles (Admin only).</p>
+            </div>
+            <button className="primary-button" onClick={() => setAddStaffOpen(true)}>
+              <Plus size={16} /> Add staff member
+            </button>
+          </div>
+
+          <div className="table-scroll">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Staff name</th>
+                  <th>Email</th>
+                  <th>Role</th>
+                  <th>Status</th>
+                  <th style={{ textAlign: "right" }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {staffLoading ? (
+                  <tr>
+                    <td colSpan={5} className="table-loading">
+                      <RefreshCw size={18} className="spin" /> Loading team…
+                    </td>
+                  </tr>
+                ) : staff.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="empty-state">No staff members found.</td>
+                  </tr>
+                ) : (
+                  staff.map((s) => (
+                    <tr key={s.id}>
+                      <td><strong>{s.name}</strong></td>
+                      <td>{s.email}</td>
+                      <td><span className="tag-pill">{s.role.toUpperCase()}</span></td>
+                      <td>
+                        <Status value={s.is_active ? "active" : "disabled"} />
+                      </td>
+                      <td style={{ textAlign: "right" }}>
+                        <button
+                          className={`btn-sm ${s.is_active ? "btn-danger" : "btn-success"}`}
+                          onClick={() => handleToggleStaff(s)}
+                        >
+                          {s.is_active ? "Deactivate" : "Activate"}
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {addStaffOpen && (
+            <div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) setAddStaffOpen(false); }}>
+              <form className="modal" onSubmit={handleCreateStaff}>
+                <div className="modal-heading">
+                  <div>
+                    <h3>Add staff member</h3>
+                    <p>Grant operations and billing access to a team member.</p>
+                  </div>
+                  <button type="button" className="icon-button" onClick={() => setAddStaffOpen(false)}>
+                    <X size={20} />
+                  </button>
+                </div>
+
+                <label>
+                  Full name
+                  <input
+                    type="text"
+                    value={newStaffName}
+                    onChange={(e) => setNewStaffName(e.target.value)}
+                    required
+                  />
+                </label>
+
+                <label>
+                  Email address
+                  <input
+                    type="email"
+                    value={newStaffEmail}
+                    onChange={(e) => setNewStaffEmail(e.target.value)}
+                    required
+                  />
+                </label>
+
+                <label>
+                  Temporary password
+                  <input
+                    type="password"
+                    placeholder="Must meet password requirements"
+                    value={newStaffPassword}
+                    onChange={(e) => setNewStaffPassword(e.target.value)}
+                    required
+                  />
+                </label>
+
+                <div className="modal-actions">
+                  <button type="button" className="secondary-button" onClick={() => setAddStaffOpen(false)} disabled={staffBusy}>
+                    Cancel
+                  </button>
+                  <button type="submit" className="primary-button" disabled={staffBusy}>
+                    {staffBusy ? "Creating..." : "Create staff account"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+        </section>
+      )}
+    </div>
   );
 }
 
@@ -2077,6 +3869,19 @@ function SubscriptionDetailModal({
     runAction(() => api.closeSubscription(sub.id, reason), `Subscription ${sub.number} cancelled.`);
   };
 
+  const handleRevise = () => {
+    runAction(() => api.reviseSubscription(sub.id), `Subscription ${sub.number} revised to draft.`);
+  };
+
+  const handleRenew = () => {
+    const ext = window.prompt("New expiry date (YYYY-MM-DD) or leave blank to extend one cycle:", "");
+    if (ext === null) return;
+    runAction(
+      () => api.renewSubscription(sub.id, ext.trim() ? { new_expiry_date: ext.trim() } : {}),
+      `Subscription ${sub.number} renewed!`
+    );
+  };
+
   const handleBillNow = () => {
     runAction(async () => {
       await api.billSubscriptionNow(sub.id);
@@ -2249,9 +4054,14 @@ function SubscriptionDetailModal({
           {sub.status === "quotation" && (
             <>
               {isStaff && (
-                <button className="secondary-button" onClick={handleQuickActivate} disabled={busy}>
-                  <Zap size={14} /> {busy ? "Activating..." : "Activate Direct"}
-                </button>
+                <>
+                  <button className="secondary-button" onClick={handleRevise} disabled={busy}>
+                    <RefreshCw size={14} /> Revise to Draft
+                  </button>
+                  <button className="secondary-button" onClick={handleQuickActivate} disabled={busy}>
+                    <Zap size={14} /> {busy ? "Activating..." : "Activate Direct"}
+                  </button>
+                </>
               )}
               <button className="primary-button btn-success" onClick={handleConfirm} disabled={busy}>
                 <Check size={14} /> {busy ? "Confirming..." : "Accept & Confirm Quotation"}
@@ -2271,6 +4081,9 @@ function SubscriptionDetailModal({
             <>
               <button className="secondary-button" onClick={handlePause} disabled={busy}>
                 <Pause size={14} /> Pause
+              </button>
+              <button className="secondary-button" onClick={handleRenew} disabled={busy}>
+                <Repeat size={14} /> Renew Contract
               </button>
               <button className="btn-danger" style={{ padding: "8px 14px", borderRadius: "8px", fontWeight: "600", cursor: "pointer" }} onClick={handleClose} disabled={busy}>
                 Cancel Subscription
@@ -2293,6 +4106,13 @@ function SubscriptionDetailModal({
                 Cancel Subscription
               </button>
             </>
+          )}
+
+          {/* Closed actions */}
+          {sub.status === "closed" && (
+            <button className="primary-button btn-success" onClick={handleRenew} disabled={busy}>
+              <Repeat size={14} /> Renew / Reopen Subscription
+            </button>
           )}
         </div>
       </div>
@@ -2493,6 +4313,11 @@ export default function App() {
           icon: Repeat,
         },
         {
+          id: "quotations",
+          label: isStaff ? "Quotations" : "My quotations",
+          icon: FileText,
+        },
+        {
           id: "invoices",
           label: isStaff ? "Invoices & Billing" : "My Invoices",
           icon: Receipt,
@@ -2518,6 +4343,7 @@ export default function App() {
   const pageTitles = {
     dashboard: "Dashboard",
     subscriptions: isStaff ? "Subscriptions" : "My subscriptions",
+    quotations: isStaff ? "Quotations" : "My quotations",
     plans: "Plans & Pricing",
     customers: "Customers",
     invoices: "Invoices & Billing",
@@ -2693,11 +4519,34 @@ export default function App() {
               plans={data.plans}
               subscriptions={data.subscriptions}
               isStaff={isStaff}
+              isAdmin={user?.role === "admin"}
               onCreate={openCreate}
+              notify={notify}
+              onRefresh={() => refreshData(user)}
             />
           )}
           {page === "customers" && (
-            <CustomersPage customers={data.customers} subscriptions={data.subscriptions} />
+            <CustomersPage
+              customers={data.customers}
+              subscriptions={data.subscriptions}
+              isAdmin={user?.role === "admin"}
+              notify={notify}
+              onRefresh={() => refreshData(user)}
+            />
+          )}
+          {page === "quotations" && (
+            <QuotationsPage
+              user={user}
+              isStaff={isStaff}
+              plans={data.plans}
+              customers={data.customers}
+              products={data.products}
+              notify={notify}
+              onSelectSub={(sub) => {
+                setSelected(normalizeSubscription(sub));
+                setPage("subscriptions");
+              }}
+            />
           )}
           {page === "invoices" && (
             <InvoicesPage user={user} isStaff={isStaff} notify={notify} />
@@ -2717,6 +4566,7 @@ export default function App() {
               loading={loadingData}
               onRefresh={() => refreshData(user)}
               onLogout={handleLogout}
+              notify={notify}
             />
           )}
 
