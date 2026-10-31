@@ -26,21 +26,13 @@ an admin through the API.
 
 ## What is live
 
-- JWT login, registration, session restore and sign-out
-- Live subscriptions, plans, customers and products from `/api/v1`
-- Customer-scoped data for customer accounts (plans/products/customers pages
-  are hidden for that role)
-- Create subscription flow with plan minimum quantity and server-side pricing
-- Subscription detail drawer with invoice lines and status history
-- Estimated MRR / ARR and the upcoming billing schedule derived from live data
-- INR formatting from backend decimal values
-
-## Still demo data
-
-- **Invoices & billing** — invoice endpoints are not implemented on this branch;
-  the table is explicitly labelled demo data.
-- **Reports / insights** — `/reports/*` and `/insights/*` are not implemented on
-  this branch. Analytics computes MRR from live plan prices and excludes tax.
+- **JWT Authentication:** login, registration, session restore, and role-based views (`admin`, `staff`, `customer`)
+- **Subscriptions Lifecycle:** live subscriptions, plan minimum quantity, drawer details, pause/resume/close
+- **Catalog & Quoting:** live plans, customers, products, and quotation PDF generation
+- **Invoices & Billing Operations:** live invoices, status filtering, one-click billing runs (dry-run & live), invoice PDF downloads
+- **Payment Reconciliation:** record payments with method, note, and auto-settlement to `paid` status
+- **Analytics & Revenue Guardian:** live MRR & ARR from `/reports/summary`, Holt-linear forecasting, overdue chase list, and automated risk intelligence
+- **Customer Portal:** customers only see their own subscriptions, invoices, and payment receipts
 
 ## Configuration
 

@@ -28,6 +28,13 @@ import {
   LogOut,
   RefreshCw,
   Info,
+  Play,
+  Send,
+  Check,
+  DollarSign,
+  ShieldAlert,
+  FileText,
+  TrendingUp,
 } from "lucide-react";
 import "./App.css";
 import { API_BASE, api, clearToken, getToken, setToken } from "./api";
@@ -970,140 +977,722 @@ function CustomersPage({ customers, subscriptions }) {
   );
 }
 
+// ---------------------------------------------------------------- record payment modal
+function RecordPaymentModal({ invoice, onClose, onSuccess, notify }) {
+  const [amount, setAmount] = useState(invoice.outstanding || invoice.total || "");
+  const [method, setMethod] = useState("bank_transfer");
+  const [paidAt, setPaidAt] = useState(new Date().toISOString().slice(0, 10));
+  const [note, setNote] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState(null);
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    const numAmount = parseFloat(amount);
+    if (!numAmount || numAmount <= 0) {
+      setError("Please enter a valid positive payment amount");
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    try {
+      await api.recordPayment({
+        invoice_id: invoice.id,
+        amount: numAmount,
+        method,
+        paid_at: paidAt,
+        note: note || undefined,
+      });
+      notify(`Payment of ${formatMoney(numAmount)} recorded for ${invoice.number}`);
+      onSuccess();
+    } catch (err) {
+      setError(err.message || "Failed to record payment");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-heading">
+          <div>
+            <h3>Record Payment</h3>
+            <p>Invoice {invoice.number} · Outstanding: {formatMoney(invoice.outstanding || invoice.total)}</p>
+          </div>
+          <button className="icon-button" onClick={onClose}><X size={18} /></button>
+        </div>
+
+        {error && <div className="banner banner-error">{error}</div>}
+
+        <form onSubmit={handleSubmit}>
+          <div className="form-grid">
+            <label>
+              Amount (INR)
+              <input
+                type="number"
+                step="0.01"
+                min="0.01"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                required
+              />
+            </label>
+            <label>
+              Payment Method
+              <select value={method} onChange={(e) => setMethod(e.target.value)}>
+                <option value="bank_transfer">Bank Transfer</option>
+                <option value="card">Credit / Debit Card</option>
+                <option value="upi">UPI</option>
+                <option value="cash">Cash</option>
+                <option value="cheque">Cheque</option>
+                <option value="other">Other</option>
+              </select>
+            </label>
+          </div>
+
+          <label>
+            Payment Date
+            <input
+              type="date"
+              value={paidAt}
+              onChange={(e) => setPaidAt(e.target.value)}
+              required
+            />
+          </label>
+
+          <label>
+            Reference Note (optional)
+            <input
+              type="text"
+              placeholder="e.g. Bank ref #TRX-987654"
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+            />
+          </label>
+
+          <div className="modal-actions">
+            <button type="button" className="secondary-button" onClick={onClose} disabled={submitting}>
+              Cancel
+            </button>
+            <button type="submit" className="primary-button" disabled={submitting}>
+              {submitting ? "Recording..." : "Confirm Payment"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------- invoices
-function InvoicesPage() {
+function InvoicesPage({ user, isStaff, notify }) {
+  const [invoices, setInvoices] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [filter, setFilter] = useState("all");
+  const [actionId, setActionId] = useState(null);
+  const [paymentModalInvoice, setPaymentModalInvoice] = useState(null);
+  const [billingRunning, setBillingRunning] = useState(false);
+  const [billingNotice, setBillingNotice] = useState(null);
+
+  async function loadInvoices() {
+    setLoading(true);
+    setError(null);
+    try {
+      let q = "";
+      if (filter === "overdue") q = "overdue=true";
+      else if (filter !== "all") q = `status=${filter}`;
+      const res = await api.invoices(q);
+      setInvoices(res?.items || (Array.isArray(res) ? res : []));
+    } catch (err) {
+      setError(err.message || "Failed to load invoices");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadInvoices();
+  }, [filter]);
+
+  async function handleConfirm(id) {
+    setActionId(id);
+    try {
+      await api.confirmInvoice(id);
+      if (notify) notify("Invoice confirmed successfully");
+      loadInvoices();
+    } catch (err) {
+      if (notify) notify(err.message || "Failed to confirm invoice", "error");
+    } finally {
+      setActionId(null);
+    }
+  }
+
+  async function handleCancel(id) {
+    if (!window.confirm("Are you sure you want to cancel this draft invoice?")) return;
+    setActionId(id);
+    try {
+      await api.cancelInvoice(id);
+      if (notify) notify("Invoice cancelled");
+      loadInvoices();
+    } catch (err) {
+      if (notify) notify(err.message || "Failed to cancel invoice", "error");
+    } finally {
+      setActionId(null);
+    }
+  }
+
+  async function handleSend(id) {
+    setActionId(id);
+    try {
+      await api.sendInvoice(id);
+      if (notify) notify("Invoice sent to customer");
+      loadInvoices();
+    } catch (err) {
+      if (notify) notify(err.message || "Failed to send invoice", "error");
+    } finally {
+      setActionId(null);
+    }
+  }
+
+  async function handleDownload(inv) {
+    setActionId(`pdf-${inv.id}`);
+    try {
+      await api.downloadInvoicePdf(inv.id, inv.number);
+      if (notify) notify(`Downloaded PDF for ${inv.number}`);
+    } catch (err) {
+      if (notify) notify(err.message || "PDF download failed", "error");
+    } finally {
+      setActionId(null);
+    }
+  }
+
+  async function handleRunBilling(mode) {
+    setBillingRunning(true);
+    setBillingNotice(null);
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      const res = await api.runBilling({ mode, run_date: today });
+      setBillingNotice(res);
+      if (notify) {
+        notify(
+          mode === "dry_run"
+            ? `Dry Run: ${res.created_count} eligible subscriptions evaluated (0 written)`
+            : `Live Run: ${res.created_count} invoices generated successfully!`
+        );
+      }
+      loadInvoices();
+    } catch (err) {
+      if (notify) notify(err.message || "Billing run failed", "error");
+    } finally {
+      setBillingRunning(false);
+    }
+  }
+
   return (
     <section className="panel full-panel">
       <div className="panel-heading">
         <div>
-          <h3>Invoices & billing</h3>
-          <p>Invoice lifecycle, payments and PDF downloads land in the next backend block.</p>
+          <h3>Invoices & Billing Operations</h3>
+          <p>
+            {isStaff
+              ? "Live recurring invoices, payment reconciliation, and billing engine execution."
+              : "Review your invoices, download official PDFs, and track payment receipts."}
+          </p>
         </div>
-        <button className="secondary-button" disabled title="Invoices API is not implemented yet">
-          <Download size={15} /> Export
-        </button>
+        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+          {isStaff && (
+            <>
+              <button
+                className="secondary-button"
+                onClick={() => handleRunBilling("dry_run")}
+                disabled={billingRunning}
+                title="Simulate billing without creating real invoices or modifying state"
+              >
+                <Play size={14} /> {billingRunning ? "Running..." : "Simulate Dry Run"}
+              </button>
+              <button
+                className="primary-button"
+                onClick={() => handleRunBilling("live")}
+                disabled={billingRunning}
+                title="Bill all subscriptions currently due"
+              >
+                <Zap size={14} /> {billingRunning ? "Running..." : "Execute Billing Run"}
+              </button>
+            </>
+          )}
+          <button className="secondary-button" onClick={loadInvoices} disabled={loading}>
+            <RefreshCw size={14} className={loading ? "spin" : ""} /> Refresh
+          </button>
+        </div>
       </div>
 
-      <div className="panel-body-padded">
-        <DemoBanner>
-          Invoice endpoints (<code>docs/API.md §8</code>) are not implemented on this branch
-          yet. The rows below are demo data so the screen can be reviewed.
-        </DemoBanner>
+      {billingNotice && (
+        <div className="panel-body-padded">
+          <div className={`banner ${billingNotice.mode === "dry_run" ? "banner-warning" : "banner-info"}`}>
+            <Info size={16} />
+            <div>
+              <strong>
+                Billing {billingNotice.mode === "dry_run" ? "Dry Run (Simulation)" : "Live Run"} Completed
+              </strong>
+              <span>
+                {" "}— Run #{billingNotice.id || billingNotice.run_id}: {billingNotice.created_count} subscriptions processed,{" "}
+                {billingNotice.success_count || 0} succeeded, {billingNotice.skipped_count || 0} skipped,{" "}
+                {billingNotice.failed_count || 0} failed.
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {error && (
+        <div className="panel-body-padded">
+          <div className="banner banner-error">{error}</div>
+        </div>
+      )}
+
+      {/* Filter Tabs */}
+      <div style={{ display: "flex", gap: "6px", padding: "12px 22px", borderBottom: "1px solid #edf0ee" }}>
+        {[
+          { id: "all", label: "All Invoices" },
+          { id: "confirmed", label: "Confirmed" },
+          { id: "paid", label: "Paid" },
+          { id: "draft", label: "Draft" },
+          { id: "overdue", label: "Overdue" },
+        ].map((t) => (
+          <button
+            key={t.id}
+            onClick={() => setFilter(t.id)}
+            className="secondary-button"
+            style={{
+              padding: "6px 12px",
+              background: filter === t.id ? "#eaf6ee" : "white",
+              color: filter === t.id ? "#128653" : "#64736b",
+              borderColor: filter === t.id ? "#159b65" : "#e4eae6",
+              fontWeight: filter === t.id ? "700" : "550",
+            }}
+          >
+            {t.label}
+          </button>
+        ))}
       </div>
 
       <div className="table-scroll">
         <table>
           <thead>
             <tr>
-              <th>Invoice</th>
+              <th>Invoice #</th>
               <th>Customer</th>
-              <th>Date</th>
-              <th>Amount</th>
+              <th>Issue Date</th>
+              <th>Due Date</th>
+              <th>Total</th>
+              <th>Outstanding</th>
               <th>Status</th>
-              <th>Download</th>
+              <th>Payment State</th>
+              <th style={{ textAlign: "right" }}>Actions</th>
             </tr>
           </thead>
           <tbody>
-            {DEMO_INVOICES.map((invoice) => (
-              <tr key={invoice.id}>
-                <td>
-                  <strong>{invoice.id}</strong>
-                </td>
-                <td>{invoice.customer}</td>
-                <td>{formatDate(invoice.date)}</td>
-                <td>
-                  <strong>{formatMoney(invoice.amount)}</strong>
-                </td>
-                <td>
-                  <Status value={invoice.status} />
-                </td>
-                <td>
-                  <button className="icon-button" disabled title="PDF endpoint pending">
-                    <Download size={17} />
-                  </button>
+            {loading ? (
+              <tr>
+                <td colSpan={9} style={{ textAlign: "center", padding: "30px", color: "#8a9790" }}>
+                  <RefreshCw size={18} className="spin" style={{ margin: "auto", display: "block" }} />
+                  Loading invoices from backend...
                 </td>
               </tr>
-            ))}
+            ) : invoices.length === 0 ? (
+              <tr>
+                <td colSpan={9} style={{ textAlign: "center", padding: "35px", color: "#8a9790" }}>
+                  No invoices found matching this filter.
+                  {isStaff && " Click 'Execute Billing Run' above to bill active subscriptions."}
+                </td>
+              </tr>
+            ) : (
+              invoices.map((inv) => {
+                const isOverdue = inv.is_overdue || inv._is_overdue;
+                const outstanding = inv.outstanding !== undefined ? inv.outstanding : inv.total;
+                return (
+                  <tr key={inv.id}>
+                    <td>
+                      <strong>{inv.number}</strong>
+                    </td>
+                    <td>Customer #{inv.customer_id}</td>
+                    <td>{formatDate(inv.issue_date)}</td>
+                    <td>
+                      {formatDate(inv.due_date)}
+                      {isOverdue && (
+                        <span className="badge-overdue" style={{ marginLeft: "6px" }}>
+                          Overdue ({inv.days_overdue || 1}d)
+                        </span>
+                      )}
+                    </td>
+                    <td>
+                      <strong>{formatMoney(inv.total)}</strong>
+                    </td>
+                    <td style={{ color: parseFloat(outstanding) > 0 ? "#b8564c" : "#15945f" }}>
+                      {formatMoney(outstanding)}
+                    </td>
+                    <td>
+                      <Status value={inv.status} />
+                    </td>
+                    <td>
+                      <span className={`tag-pill ${inv.payment_state === "paid" ? "badge-risk-low" : ""}`}>
+                        {(inv.payment_state || "unpaid").toUpperCase()}
+                      </span>
+                    </td>
+                    <td style={{ textAlign: "right" }}>
+                      <div className="table-actions">
+                        <button
+                          className="icon-button"
+                          onClick={() => handleDownload(inv)}
+                          disabled={actionId === `pdf-${inv.id}`}
+                          title="Download PDF Invoice"
+                        >
+                          <Download size={15} />
+                        </button>
+
+                        {isStaff && inv.status === "draft" && (
+                          <>
+                            <button
+                              className="btn-sm btn-success"
+                              onClick={() => handleConfirm(inv.id)}
+                              disabled={actionId === inv.id}
+                              title="Confirm draft invoice"
+                            >
+                              <Check size={12} /> Confirm
+                            </button>
+                            <button
+                              className="btn-sm btn-danger"
+                              onClick={() => handleCancel(inv.id)}
+                              disabled={actionId === inv.id}
+                              title="Cancel draft invoice"
+                            >
+                              <X size={12} />
+                            </button>
+                          </>
+                        )}
+
+                        {isStaff && inv.status === "confirmed" && (
+                          <button
+                            className="btn-sm secondary-button"
+                            onClick={() => handleSend(inv.id)}
+                            disabled={actionId === inv.id}
+                            title="Send invoice email link"
+                          >
+                            <Send size={12} /> Send
+                          </button>
+                        )}
+
+                        {isStaff && inv.status === "confirmed" && parseFloat(outstanding) > 0 && (
+                          <button
+                            className="btn-sm btn-success"
+                            onClick={() => setPaymentModalInvoice(inv)}
+                            title="Record payment for this invoice"
+                          >
+                            <DollarSign size={12} /> Pay
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })
+            )}
           </tbody>
         </table>
       </div>
+
+      {paymentModalInvoice && (
+        <RecordPaymentModal
+          invoice={paymentModalInvoice}
+          onClose={() => setPaymentModalInvoice(null)}
+          onSuccess={() => {
+            setPaymentModalInvoice(null);
+            loadInvoices();
+          }}
+          notify={notify}
+        />
+      )}
     </section>
   );
 }
 
 // ---------------------------------------------------------------- analytics
-function AnalyticsPage({ subscriptions }) {
-  const active = subscriptions.filter((subscription) => subscription.status === "active");
-  const paused = subscriptions.filter((subscription) => subscription.status === "paused");
-  const mrr = active.reduce((sum, subscription) => sum + subscription.mrr, 0);
+function AnalyticsPage({ subscriptions, isStaff, notify }) {
+  const [summary, setSummary] = useState(null);
+  const [mrrData, setMrrData] = useState(null);
+  const [overdue, setOverdue] = useState([]);
+  const [risk, setRisk] = useState([]);
+  const [forecast, setForecast] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  async function loadAnalytics() {
+    setLoading(true);
+    setError(null);
+    try {
+      const [sumRes, mrrRes, ovRes, riskRes, fcRes] = await Promise.allSettled([
+        api.reportsSummary(),
+        api.reportsMrr(),
+        api.reportsOverdue(),
+        api.insightsRisk(),
+        api.insightsForecast(4),
+      ]);
+      if (sumRes.status === "fulfilled") setSummary(sumRes.value);
+      if (mrrRes.status === "fulfilled") setMrrData(mrrRes.value);
+      if (ovRes.status === "fulfilled") setOverdue(ovRes.value?.items || []);
+      if (riskRes.status === "fulfilled") setRisk(riskRes.value?.items || []);
+      if (fcRes.status === "fulfilled") setForecast(fcRes.value);
+    } catch (err) {
+      setError(err.message || "Failed to load reports and insights");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadAnalytics();
+  }, []);
+
+  const liveMrr = summary?.mrr ? parseFloat(summary.mrr) : 0;
+  const liveArr = summary?.arr ? parseFloat(summary.arr) : liveMrr * 12;
+  const overdueTotal = summary?.overdue_total ? parseFloat(summary.overdue_total) : 0;
+  const unsettledTotal = summary?.unsettled_total ? parseFloat(summary.unsettled_total) : 0;
+  const highRiskCount = risk.filter((r) => r.risk_level === "high").length;
 
   return (
-    <>
-      <DemoBanner>
-        <code>/reports/*</code> and <code>/insights/*</code> are not implemented on this
-        branch yet. MRR here is estimated from live plan prices and excludes tax; the
-        billing schedule is computed from real subscription dates.
-      </DemoBanner>
-
-      <div className="analytics-grid">
+    <div style={{ display: "grid", gap: "22px" }}>
+      {/* Top Real-time Financial KPIs */}
+      <div className="metrics-grid">
         <MetricCard
-          title="Estimated MRR"
-          value={formatMoney(mrr)}
-          change="ex-tax"
+          title="Monthly Recurring Revenue"
+          value={formatMoney(liveMrr)}
+          change="Live /reports/summary"
           positive
           icon={CreditCard}
-          note="from active plans"
+          note="Normalized ex-tax MRR"
         />
         <MetricCard
-          title="Estimated ARR"
-          value={formatMoney(mrr * 12)}
-          change="ex-tax"
+          title="Annualized Run Rate (ARR)"
+          value={formatMoney(liveArr)}
+          change="MRR × 12"
           positive
-          icon={ChartNoAxesCombined}
-          note="MRR × 12"
+          icon={TrendingUp}
+          note="Projected annual revenue"
         />
         <MetricCard
-          title="Active subscriptions"
-          value={active.length.toString()}
-          change={`${subscriptions.length} total`}
-          positive
-          icon={Repeat}
-          note="live records"
+          title="Unsettled Invoices"
+          value={formatMoney(unsettledTotal)}
+          change={`${summary?.unsettled_invoices_count || 0} pending`}
+          positive={unsettledTotal === 0}
+          icon={Receipt}
+          note="Confirmed & partial balances"
         />
         <MetricCard
-          title="Paused subscriptions"
-          value={paused.length.toString()}
-          change={paused.length ? "Needs review" : "None"}
-          positive={!paused.length}
-          icon={Clock}
-          note="not billed while paused"
+          title="Overdue Receivables"
+          value={formatMoney(overdueTotal)}
+          change={`${summary?.overdue_invoices_count || 0} overdue`}
+          positive={overdueTotal === 0}
+          icon={AlertCircle}
+          note="Requires collections action"
         />
+      </div>
 
-        <section className="panel analytics-chart">
+      {/* Row 2: MRR Forecast & Revenue Guardian Risk Scoring */}
+      <div className="bottom-grid" style={{ display: "grid", gridTemplateColumns: "1.1fr 1fr", gap: "20px" }}>
+        {/* MRR Trend & Forecast */}
+        <section className="panel">
           <div className="panel-heading">
             <div>
-              <h3>Upcoming billing schedule</h3>
-              <p>Live active subscriptions grouped by next billing month</p>
+              <h3>MRR Growth & Holt-Linear Projections</h3>
+              <p>Historical monthly MRR combined with statistical trend projection</p>
             </div>
+            <span className="tag-pill" style={{ background: "#eaf6ee", color: "#168752" }}>
+              {forecast?.method ? `Method: ${forecast.method.toUpperCase()}` : "Holt-Linear Engine"}
+            </span>
           </div>
-          <BillingScheduleChart subscriptions={subscriptions} large />
+
+          <div className="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Period</th>
+                  <th>MRR</th>
+                  <th>Growth</th>
+                  <th>Type</th>
+                </tr>
+              </thead>
+              <tbody>
+                {mrrData?.series && mrrData.series.length > 0 ? (
+                  mrrData.series.map((s) => (
+                    <tr key={s.period}>
+                      <td><strong>{s.period}</strong></td>
+                      <td>{formatMoney(s.mrr)}</td>
+                      <td style={{ color: s.growth_pct >= 0 ? "#15945f" : "#c45c52" }}>
+                        {s.growth_pct !== null ? `${s.growth_pct > 0 ? "+" : ""}${s.growth_pct}%` : "—"}
+                      </td>
+                      <td><span className="tag-pill">Historical</span></td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td><strong>{new Date().toISOString().slice(0, 7)}</strong></td>
+                    <td>{formatMoney(liveMrr)}</td>
+                    <td style={{ color: "#15945f" }}>+0.0%</td>
+                    <td><span className="tag-pill">Current</span></td>
+                  </tr>
+                )}
+
+                {/* Forecasted points */}
+                {forecast?.points &&
+                  forecast.points.map((pt) => (
+                    <tr key={pt.period} style={{ background: "#fbfcfb" }}>
+                      <td><strong>{pt.period}</strong></td>
+                      <td style={{ color: "#128653" }}><strong>{formatMoney(pt.mrr)}</strong></td>
+                      <td style={{ color: pt.growth_pct >= 0 ? "#15945f" : "#c45c52" }}>
+                        {pt.growth_pct !== null ? `${pt.growth_pct > 0 ? "+" : ""}${pt.growth_pct}%` : "—"}
+                      </td>
+                      <td><span className="tag-pill badge-risk-low">Projected</span></td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </div>
         </section>
 
-        <section className="panel analytics-chart">
+        {/* Revenue Guardian: Churn Risk Scoring */}
+        <section className="panel">
           <div className="panel-heading">
             <div>
-              <h3>Plan distribution</h3>
-              <p>Active subscriptions and estimated monthly value by plan</p>
+              <h3>Revenue Guardian — Risk Intelligence</h3>
+              <p>Automated subscription churn & payment delinquency scoring</p>
             </div>
+            {highRiskCount > 0 && (
+              <span className="badge-risk-high">{highRiskCount} High Risk</span>
+            )}
           </div>
-          <div className="analytics-plan-mix">
-            <PlanMix subscriptions={subscriptions} />
+
+          <div className="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Subscription</th>
+                  <th>Customer</th>
+                  <th>Risk Level</th>
+                  <th>Key Factors</th>
+                </tr>
+              </thead>
+              <tbody>
+                {risk.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} style={{ textAlign: "center", padding: "28px", color: "#8a9790" }}>
+                      No subscription risk anomalies detected.
+                    </td>
+                  </tr>
+                ) : (
+                  risk.map((r) => {
+                    const levelClass =
+                      r.risk_level === "high"
+                        ? "badge-risk-high"
+                        : r.risk_level === "medium"
+                        ? "badge-risk-medium"
+                        : "badge-risk-low";
+                    return (
+                      <tr key={r.subscription_id}>
+                        <td><strong>#{r.subscription_id}</strong></td>
+                        <td>Customer #{r.customer_id}</td>
+                        <td>
+                          <span className={levelClass}>
+                            {r.risk_level.toUpperCase()} ({r.risk_score})
+                          </span>
+                        </td>
+                        <td>
+                          {r.reasons && r.reasons.length > 0 ? (
+                            r.reasons.map((reason, i) => (
+                              <span key={i} className="tag-pill" style={{ marginRight: "4px" }}>
+                                {reason}
+                              </span>
+                            ))
+                          ) : (
+                            <span style={{ color: "#8a9790", fontSize: "10px" }}>Healthy</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
           </div>
         </section>
       </div>
-    </>
+
+      {/* Row 3: Overdue Chase List */}
+      <section className="panel full-panel">
+        <div className="panel-heading">
+          <div>
+            <h3>Overdue Invoices Chase List</h3>
+            <p>Prioritized collections queue for accounts with past-due payment dates</p>
+          </div>
+          <button className="secondary-button" onClick={loadAnalytics}>
+            <RefreshCw size={13} className={loading ? "spin" : ""} /> Refresh List
+          </button>
+        </div>
+
+        <div className="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Invoice #</th>
+                <th>Customer</th>
+                <th>Due Date</th>
+                <th>Days Overdue</th>
+                <th>Total</th>
+                <th>Outstanding</th>
+                <th style={{ textAlign: "right" }}>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {overdue.length === 0 ? (
+                <tr>
+                  <td colSpan={7} style={{ textAlign: "center", padding: "30px", color: "#168653" }}>
+                    <CircleCheck size={20} style={{ display: "block", margin: "0 auto 8px" }} />
+                    No overdue invoices! All issued accounts are current and settled.
+                  </td>
+                </tr>
+              ) : (
+                overdue.map((item) => (
+                  <tr key={item.id}>
+                    <td><strong>{item.number}</strong></td>
+                    <td>{item.customer_name || `Customer #${item.customer_id}`}</td>
+                    <td>{formatDate(item.due_date)}</td>
+                    <td>
+                      <span className="badge-overdue">{item.days_overdue} days</span>
+                    </td>
+                    <td>{formatMoney(item.total)}</td>
+                    <td style={{ color: "#b8564c", fontWeight: "700" }}>
+                      {formatMoney(item.outstanding)}
+                    </td>
+                    <td style={{ textAlign: "right" }}>
+                      <button
+                        className="btn-sm secondary-button"
+                        onClick={() => api.downloadInvoicePdf(item.id, item.number)}
+                      >
+                        <Download size={13} /> PDF
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
   );
 }
+
 
 // ---------------------------------------------------------------- settings
 function SettingsPage({ user, roleLabel, lastSynced, loading, onRefresh, onLogout }) {
@@ -1660,11 +2249,15 @@ export default function App() {
           label: isStaff ? "Subscriptions" : "My subscriptions",
           icon: Repeat,
         },
+        {
+          id: "invoices",
+          label: isStaff ? "Invoices & Billing" : "My Invoices",
+          icon: Receipt,
+        },
         ...(isStaff
           ? [
               { id: "plans", label: "Plans & Pricing", icon: Layers },
               { id: "customers", label: "Customers", icon: Users },
-              { id: "invoices", label: "Invoices & Billing", icon: Receipt },
             ]
           : []),
       ],
@@ -1863,8 +2456,16 @@ export default function App() {
           {page === "customers" && (
             <CustomersPage customers={data.customers} subscriptions={data.subscriptions} />
           )}
-          {page === "invoices" && <InvoicesPage />}
-          {page === "analytics" && <AnalyticsPage subscriptions={data.subscriptions} />}
+          {page === "invoices" && (
+            <InvoicesPage user={user} isStaff={isStaff} notify={notify} />
+          )}
+          {page === "analytics" && (
+            <AnalyticsPage
+              subscriptions={data.subscriptions}
+              isStaff={isStaff}
+              notify={notify}
+            />
+          )}
           {page === "settings" && (
             <SettingsPage
               user={user}
