@@ -98,8 +98,18 @@ export const api = {
     request("/auth/register", { method: "POST", body: payload, auth: false }),
   me: () => request("/auth/me"),
   subscriptions: (pageSize = 100) => request(`/subscriptions${listQuery(pageSize)}`),
+  getSubscription: (id) => request(`/subscriptions/${id}`),
   createSubscription: (payload) =>
     request("/subscriptions", { method: "POST", body: payload }),
+  sendSubscription: (id) => request(`/subscriptions/${id}/send`, { method: "POST" }),
+  confirmSubscription: (id) => request(`/subscriptions/${id}/confirm`, { method: "POST" }),
+  activateSubscription: (id) => request(`/subscriptions/${id}/activate`, { method: "POST" }),
+  pauseSubscription: (id, reason = "Customer requested pause") =>
+    request(`/subscriptions/${id}/pause`, { method: "POST", body: { reason } }),
+  resumeSubscription: (id) => request(`/subscriptions/${id}/resume`, { method: "POST" }),
+  closeSubscription: (id, reason = "Customer requested cancellation") =>
+    request(`/subscriptions/${id}/close`, { method: "POST", body: { reason } }),
+  billSubscriptionNow: (id) => request(`/subscriptions/${id}/bill-now`, { method: "POST" }),
   plans: (pageSize = 100) => request(`/plans${listQuery(pageSize)}`),
   customers: (pageSize = 300) => request(`/customers${listQuery(pageSize)}`),
   products: (pageSize = 100) => request(`/products${listQuery(pageSize)}`),

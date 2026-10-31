@@ -35,6 +35,7 @@ import {
   ShieldAlert,
   FileText,
   TrendingUp,
+  Pause,
 } from "lucide-react";
 import "./App.css";
 import { API_BASE, api, clearToken, getToken, setToken } from "./api";
@@ -1776,6 +1777,7 @@ function AddSubscriptionModal({ customers, plans, products, initialPlanId, onClo
   const [quantity, setQuantity] = useState(startingPlan?.minQuantity || 1);
   const [startDate, setStartDate] = useState(TODAY_ISO);
   const [paymentTerms, setPaymentTerms] = useState("Net 30");
+  const [autoActivate, setAutoActivate] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -1812,7 +1814,7 @@ function AddSubscriptionModal({ customers, plans, products, initialPlanId, onClo
     setBusy(true);
     setError("");
     try {
-      await api.createSubscription({
+      const created = await api.createSubscription({
         customer_id: Number(customerId),
         plan_id: Number(planId),
         start_date: startDate || undefined,
@@ -1824,8 +1826,17 @@ function AddSubscriptionModal({ customers, plans, products, initialPlanId, onClo
           },
         ],
       });
+      if (autoActivate && created?.id) {
+        try {
+          await api.sendSubscription(created.id);
+          await api.confirmSubscription(created.id);
+          await api.activateSubscription(created.id);
+        } catch (e) {
+          console.warn("Could not auto-activate:", e);
+        }
+      }
       const customer = customers.find((item) => item.id === Number(customerId));
-      onCreated(`Subscription created for ${customer?.name || "customer"}`);
+      onCreated(`Subscription created${autoActivate ? " & activated" : ""} for ${customer?.name || "customer"}`);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -1947,6 +1958,15 @@ function AddSubscriptionModal({ customers, plans, products, initialPlanId, onClo
           </p>
         )}
 
+        <label style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "13px", cursor: "pointer", marginTop: "12px", userSelect: "none" }}>
+          <input
+            type="checkbox"
+            checked={autoActivate}
+            onChange={(e) => setAutoActivate(e.target.checked)}
+          />
+          <span><strong>Activate immediately</strong> (draft &rarr; quotation &rarr; confirmed &rarr; active)</span>
+        </label>
+
         {error && (
           <div className="auth-error">
             <AlertCircle size={15} /> {error}
@@ -1983,17 +2003,95 @@ function DetailItem({ label, value }) {
   );
 }
 
-function SubscriptionDetailModal({ subscription, onClose }) {
-  const sub = subscription;
+function SubscriptionDetailModal({
+  subscription,
+  user,
+  isStaff,
+  onClose,
+  onUpdated,
+  notify,
+}) {
+  const [sub, setSub] = useState(subscription);
+  const [busy, setBusy] = useState(false);
+  const [actionError, setActionError] = useState("");
+
+  const runAction = async (fn, successMsg) => {
+    try {
+      setBusy(true);
+      setActionError("");
+      const res = await fn();
+      if (res && res.id) {
+        setSub(normalizeSubscription(res));
+      } else {
+        try {
+          const fresh = await api.getSubscription(sub.id);
+          if (fresh) setSub(normalizeSubscription(fresh));
+        } catch (_) {}
+      }
+      if (notify) notify(successMsg);
+      if (onUpdated) await onUpdated();
+    } catch (err) {
+      setActionError(err.message || "Failed to update subscription.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleSend = () => {
+    runAction(() => api.sendSubscription(sub.id), `Quotation sent for ${sub.number}`);
+  };
+
+  const handleConfirm = () => {
+    runAction(() => api.confirmSubscription(sub.id), `Subscription ${sub.number} confirmed!`);
+  };
+
+  const handleActivate = () => {
+    runAction(() => api.activateSubscription(sub.id), `Subscription ${sub.number} activated!`);
+  };
+
+  const handleQuickActivate = () => {
+    runAction(async () => {
+      if (sub.status === "draft") {
+        await api.sendSubscription(sub.id);
+      }
+      if (sub.status === "draft" || sub.status === "quotation") {
+        await api.confirmSubscription(sub.id);
+      }
+      return await api.activateSubscription(sub.id);
+    }, `Subscription ${sub.number} is now active!`);
+  };
+
+  const handlePause = () => {
+    const reason = window.prompt("Reason for pause (optional):", "Customer requested pause");
+    if (reason === null) return;
+    runAction(() => api.pauseSubscription(sub.id, reason), `Subscription ${sub.number} paused.`);
+  };
+
+  const handleResume = () => {
+    runAction(() => api.resumeSubscription(sub.id), `Subscription ${sub.number} resumed!`);
+  };
+
+  const handleClose = () => {
+    const reason = window.prompt("Reason for cancellation (optional):", "Customer requested cancellation");
+    if (reason === null) return;
+    runAction(() => api.closeSubscription(sub.id, reason), `Subscription ${sub.number} cancelled.`);
+  };
+
+  const handleBillNow = () => {
+    runAction(async () => {
+      await api.billSubscriptionNow(sub.id);
+      return await api.getSubscription(sub.id);
+    }, `Invoice generated for ${sub.number}!`);
+  };
 
   return (
     <div
       className="modal-overlay"
       onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
+        if (event.target === event.currentTarget && !busy) onClose();
       }}
     >
-      <div className="modal detail-modal">
+      <div className="modal detail-modal" style={{ maxWidth: "680px" }}>
         <div className="modal-heading">
           <div>
             <h3>{sub.number}</h3>
@@ -2001,15 +2099,69 @@ function SubscriptionDetailModal({ subscription, onClose }) {
               {sub.customer} · {sub.plan}
             </p>
           </div>
-          <button className="icon-button" onClick={onClose}>
+          <button className="icon-button" onClick={onClose} disabled={busy}>
             <X size={20} />
           </button>
         </div>
 
-        <div className="detail-status">
-          <Status value={sub.status} />
-          <span className="muted">{sub.paymentTerms || "No payment terms"}</span>
+        <div className="detail-status" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <Status value={sub.status} />
+            <span className="muted">{sub.paymentTerms || "No payment terms"}</span>
+          </div>
+          {sub.raw?.quotation_id && (
+            <button
+              type="button"
+              className="btn-sm secondary-button"
+              style={{ display: "inline-flex", alignItems: "center", gap: "5px" }}
+              onClick={() => api.downloadQuotationPdf(sub.raw.quotation_id, `${sub.number}-quote.pdf`)}
+            >
+              <Download size={13} /> Download Quotation PDF
+            </button>
+          )}
         </div>
+
+        {actionError && (
+          <div className="auth-error" style={{ marginBottom: "16px" }}>
+            <AlertCircle size={15} /> {actionError}
+          </div>
+        )}
+
+        {/* Role & status guidance */}
+        {sub.status === "draft" && !isStaff && (
+          <div style={{ background: "#f0f9ff", border: "1px solid #bae6fd", padding: "10px 14px", borderRadius: "8px", color: "#0369a1", fontSize: "12px", marginBottom: "16px", display: "flex", alignItems: "center", gap: "8px" }}>
+            <Info size={16} />
+            <span>This subscription is currently in draft review by the operations team. Once published as a quotation, you can approve it here.</span>
+          </div>
+        )}
+
+        {sub.status === "quotation" && (
+          <div style={{ background: "#ecfdf5", border: "1px solid #a7f3d0", padding: "10px 14px", borderRadius: "8px", color: "#065f46", fontSize: "12px", marginBottom: "16px", display: "flex", alignItems: "center", gap: "8px" }}>
+            <Sparkles size={16} />
+            <span>Quotation ready for review! Click <strong>Accept & Confirm</strong> below to approve this subscription.</span>
+          </div>
+        )}
+
+        {sub.status === "confirmed" && !isStaff && (
+          <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", padding: "10px 14px", borderRadius: "8px", color: "#15803d", fontSize: "12px", marginBottom: "16px", display: "flex", alignItems: "center", gap: "8px" }}>
+            <Check size={16} />
+            <span>Subscription confirmed! Our operations team is provisioning your service now.</span>
+          </div>
+        )}
+
+        {sub.status === "paused" && (
+          <div style={{ background: "#fffbeb", border: "1px solid #fde68a", padding: "10px 14px", borderRadius: "8px", color: "#92400e", fontSize: "12px", marginBottom: "16px", display: "flex", alignItems: "center", gap: "8px" }}>
+            <Clock size={16} />
+            <span>This subscription is currently paused {sub.raw?.pause_reason ? `(${sub.raw.pause_reason})` : ""}. No billing will occur while paused. Click <strong>Resume</strong> below to reactivate.</span>
+          </div>
+        )}
+
+        {sub.status === "closed" && (
+          <div style={{ background: "#f3f4f6", border: "1px solid #e5e7eb", padding: "10px 14px", borderRadius: "8px", color: "#6b7280", fontSize: "12px", marginBottom: "16px", display: "flex", alignItems: "center", gap: "8px" }}>
+            <AlertCircle size={16} />
+            <span>This subscription was cancelled {sub.raw?.close_reason ? `(${sub.raw.close_reason})` : ""}.</span>
+          </div>
+        )}
 
         <div className="detail-grid">
           <DetailItem label="Start date" value={formatDate(sub.startDate)} />
@@ -2076,10 +2228,72 @@ function SubscriptionDetailModal({ subscription, onClose }) {
           <p className="empty-state">No status events recorded.</p>
         )}
 
-        <div className="modal-actions">
-          <button className="secondary-button" onClick={onClose}>
+        <div className="modal-actions" style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: "8px", flexWrap: "wrap", marginTop: "20px" }}>
+          <button className="secondary-button" onClick={onClose} disabled={busy}>
             Close
           </button>
+
+          {/* Draft actions */}
+          {sub.status === "draft" && isStaff && (
+            <>
+              <button className="secondary-button" onClick={handleSend} disabled={busy}>
+                <Send size={14} /> Send Quotation
+              </button>
+              <button className="primary-button btn-success" onClick={handleQuickActivate} disabled={busy}>
+                <Zap size={14} /> {busy ? "Activating..." : "One-Click Activate"}
+              </button>
+            </>
+          )}
+
+          {/* Quotation actions */}
+          {sub.status === "quotation" && (
+            <>
+              {isStaff && (
+                <button className="secondary-button" onClick={handleQuickActivate} disabled={busy}>
+                  <Zap size={14} /> {busy ? "Activating..." : "Activate Direct"}
+                </button>
+              )}
+              <button className="primary-button btn-success" onClick={handleConfirm} disabled={busy}>
+                <Check size={14} /> {busy ? "Confirming..." : "Accept & Confirm Quotation"}
+              </button>
+            </>
+          )}
+
+          {/* Confirmed actions */}
+          {sub.status === "confirmed" && isStaff && (
+            <button className="primary-button btn-success" onClick={handleActivate} disabled={busy}>
+              <Play size={14} /> {busy ? "Activating..." : "Activate Subscription"}
+            </button>
+          )}
+
+          {/* Active actions */}
+          {sub.status === "active" && (
+            <>
+              <button className="secondary-button" onClick={handlePause} disabled={busy}>
+                <Pause size={14} /> Pause
+              </button>
+              <button className="btn-danger" style={{ padding: "8px 14px", borderRadius: "8px", fontWeight: "600", cursor: "pointer" }} onClick={handleClose} disabled={busy}>
+                Cancel Subscription
+              </button>
+              {isStaff && (
+                <button className="primary-button" onClick={handleBillNow} disabled={busy}>
+                  <DollarSign size={14} /> {busy ? "Billing..." : "Bill Now"}
+                </button>
+              )}
+            </>
+          )}
+
+          {/* Paused actions */}
+          {sub.status === "paused" && (
+            <>
+              <button className="primary-button btn-success" onClick={handleResume} disabled={busy}>
+                <Play size={14} /> {busy ? "Resuming..." : "Resume Subscription"}
+              </button>
+              <button className="btn-danger" style={{ padding: "8px 14px", borderRadius: "8px", fontWeight: "600", cursor: "pointer" }} onClick={handleClose} disabled={busy}>
+                Cancel Subscription
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>
@@ -2525,7 +2739,16 @@ export default function App() {
       )}
 
       {selected && (
-        <SubscriptionDetailModal subscription={selected} onClose={() => setSelected(null)} />
+        <SubscriptionDetailModal
+          subscription={selected}
+          user={user}
+          isStaff={isStaff}
+          onClose={() => setSelected(null)}
+          onUpdated={async () => {
+            await refreshData(user);
+          }}
+          notify={notify}
+        />
       )}
 
       {toast && (
