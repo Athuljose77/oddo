@@ -7,13 +7,15 @@ from app.admin.routes import router as admin_router
 from app.auth.routes import router as auth_router
 from app.auth.service import bootstrap_admin
 from app.billing.engine import reap_stale_runs
+from app.billing.invoice_routes import router as invoice_router
+from app.billing.payment_routes import router as payment_router
+from app.billing.reports_routes import router as reports_router
 from app.billing.routes import router as billing_router
 from app.catalog.routes import router as catalog_router
 from app.core.config import get_settings
 from app.core.database import SessionLocal
 from app.quoting.routes import router as quoting_router
 from app.subscriptions.routes import router as subscriptions_router
-from app.reporting.routes import router as reports_router
 
 settings = get_settings()
 
@@ -50,7 +52,10 @@ app.include_router(catalog_router)
 app.include_router(quoting_router)
 app.include_router(subscriptions_router)
 app.include_router(billing_router)
+app.include_router(invoice_router)
+app.include_router(payment_router)
 app.include_router(reports_router)
+
 
 @app.get("/health", tags=["health"])
 def health():

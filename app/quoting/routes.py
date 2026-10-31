@@ -273,5 +273,13 @@ def quotation_pdf(
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
-    _quotation_visible(db, quotation_id, user)
-    raise HTTPException(status.HTTP_501_NOT_IMPLEMENTED, "PDF generation lands in the invoice/PDF block")
+    from fastapi import Response
+    from app.core.pdf import generate_quotation_pdf
+
+    quotation = _quotation_visible(db, quotation_id, user)
+    pdf_bytes = generate_quotation_pdf(quotation)
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{quotation.number}.pdf"'},
+    )
