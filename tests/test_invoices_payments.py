@@ -357,3 +357,34 @@ class TestReports:
         _, _, customer, customer_token, _ = _setup(client, make_user)
         r = client.get("/api/v1/reports/summary", headers=auth_header(customer_token))
         assert r.status_code == 403
+
+
+class TestInvoicePdf:
+    def test_staff_can_download_invoice_pdf(self, client, make_user, db):
+        _, staff, customer, _, _ = _setup(client, make_user)
+        inv = db.scalars(select(Invoice).where(Invoice.customer_id == customer.id)).first()
+        assert inv is not None
+        assert inv.last_printed_at is None
+
+        r = client.get(f"/api/v1/invoices/{inv.id}/pdf", headers=auth_header(staff))
+        assert r.status_code == 200
+        assert r.headers["content-type"] == "application/pdf"
+        assert r.content.startswith(b"%PDF-")
+
+        db.refresh(inv)
+        assert inv.last_printed_at is not None
+
+    def test_customer_can_download_own_pdf(self, client, make_user, db):
+        _, _, customer, customer_token, _ = _setup(client, make_user)
+        inv = db.scalars(select(Invoice).where(Invoice.customer_id == customer.id)).first()
+        r = client.get(f"/api/v1/invoices/{inv.id}/pdf", headers=auth_header(customer_token))
+        assert r.status_code == 200
+        assert r.headers["content-type"] == "application/pdf"
+
+    def test_customer_cannot_download_other_customer_pdf(self, client, make_user, db):
+        _, _, customer, _, _ = _setup(client, make_user)
+        other_cust, other_token = make_user(role="customer")
+        inv = db.scalars(select(Invoice).where(Invoice.customer_id == customer.id)).first()
+
+        r = client.get(f"/api/v1/invoices/{inv.id}/pdf", headers=auth_header(other_token))
+        assert r.status_code == 404

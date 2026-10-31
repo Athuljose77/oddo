@@ -161,3 +161,29 @@ def send_invoice(
     _=Depends(require_staff),
 ):
     return _to_invoice_out(svc.send_invoice(db, invoice_id))
+
+
+@router.get("/invoices/{invoice_id}/pdf")
+def get_invoice_pdf(
+    invoice_id: int,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    from datetime import datetime, timezone
+    from fastapi import HTTPException, Response
+    from app.core.pdf import generate_invoice_pdf
+
+    inv = svc.get_invoice_or_404(db, invoice_id)
+    if user.role == "customer" and inv.customer_id != user.id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Invoice not found")
+
+    enriched = svc.enrich(inv)
+    inv.last_printed_at = datetime.now(timezone.utc)
+    db.commit()
+
+    pdf_bytes = generate_invoice_pdf(enriched)
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{inv.number}.pdf"'},
+    )

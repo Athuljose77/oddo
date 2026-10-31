@@ -74,6 +74,23 @@ async function request(path, { method = "GET", body, auth = true } = {}) {
 
 const listQuery = (pageSize = 100) => `?page=1&page_size=${pageSize}`;
 
+export async function downloadPdf(path, filename) {
+  const token = getToken();
+  const res = await fetch(`${API_BASE}${path}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) throw new Error(`Download failed (${res.status})`);
+  const blob = await res.blob();
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.URL.revokeObjectURL(url);
+}
+
 export const api = {
   login: (email, password) =>
     request("/auth/login", { method: "POST", body: { email, password }, auth: false }),
@@ -86,4 +103,30 @@ export const api = {
   plans: (pageSize = 100) => request(`/plans${listQuery(pageSize)}`),
   customers: (pageSize = 100) => request(`/customers${listQuery(pageSize)}`),
   products: (pageSize = 100) => request(`/products${listQuery(pageSize)}`),
+  
+  // Invoices & Payments
+  invoices: (params = "") => request(`/invoices${params ? `?${params}` : listQuery(100)}`),
+  invoice: (id) => request(`/invoices/${id}`),
+  confirmInvoice: (id) => request(`/invoices/${id}/confirm`, { method: "POST" }),
+  cancelInvoice: (id) => request(`/invoices/${id}/cancel`, { method: "POST" }),
+  sendInvoice: (id) => request(`/invoices/${id}/send`, { method: "POST" }),
+  downloadInvoicePdf: (id, number) => downloadPdf(`/invoices/${id}/pdf`, `${number || `INV-${id}`}.pdf`),
+  payments: (params = "") => request(`/payments${params ? `?${params}` : listQuery(100)}`),
+  recordPayment: (payload) => request("/payments", { method: "POST", body: payload }),
+
+  // Reports & Analytics
+  reportsSummary: () => request("/reports/summary"),
+  reportsMrr: () => request("/reports/mrr"),
+  reportsOverdue: () => request("/reports/overdue"),
+  insightsRisk: () => request("/insights/risk"),
+  insightsForecast: (horizon = 6) => request(`/insights/forecast?horizon=${horizon}`),
+
+  // Billing Operations
+  billingRuns: (pageSize = 20) => request(`/billing/runs${listQuery(pageSize)}`),
+  runBilling: (payload) => request("/billing/runs", { method: "POST", body: payload }),
+  retryBilling: (runId) => request(`/billing/runs/${runId}/retry`, { method: "POST" }),
+
+  // Quotations
+  quotations: (pageSize = 100) => request(`/quotations${listQuery(pageSize)}`),
+  downloadQuotationPdf: (id, number) => downloadPdf(`/quotations/${id}/pdf`, `${number || `QUO-${id}`}.pdf`),
 };

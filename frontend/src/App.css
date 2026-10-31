@@ -404,3 +404,19 @@ footer { text-align: center; padding: 25px 0 8px; color: #a1aaa4; font-size: 10p
   .plan-mix-track { grid-column: 1 / -1; grid-row: 2; }
   .plan-mix-row strong { text-align: right; }
 }
+
+/* Invoices & Analytics Badges and Actions */
+.badge-overdue {
+  display: inline-flex; align-items: center; gap: 4px; background: #fff0ee; color: #c45c52;
+  border: 1px solid #f6d4d0; padding: 2px 7px; border-radius: 999px; font-size: 9px; font-weight: 700;
+}
+.badge-risk-high { background: #fee2e2; color: #991b1b; padding: 3px 8px; border-radius: 999px; font-size: 9px; font-weight: 700; }
+.badge-risk-medium { background: #fef3c7; color: #92400e; padding: 3px 8px; border-radius: 999px; font-size: 9px; font-weight: 700; }
+.badge-risk-low { background: #dcfce7; color: #166534; padding: 3px 8px; border-radius: 999px; font-size: 9px; font-weight: 700; }
+.table-actions { display: inline-flex; align-items: center; gap: 6px; }
+.btn-sm { padding: 4px 8px; font-size: 10px; border-radius: 5px; }
+.btn-success { background: #159b65; color: white; border: 1px solid #138b59; }
+.btn-success:hover { background: #107d50; }
+.btn-danger { background: #fff0ee; color: #c45c52; border: 1px solid #f6d4d0; }
+.btn-danger:hover { background: #fee2e2; }
+.tag-pill { background: #f1f5f9; color: #475569; padding: 2px 6px; border-radius: 4px; font-size: 9px; font-weight: 600; display: inline-block; margin: 1px; }
