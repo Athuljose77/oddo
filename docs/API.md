@@ -372,12 +372,22 @@ Rule-based scoring is the baseline; ML only if it beats the baseline on holdout 
 |---|---|
 | auth (register/login/me/forgot/reset/change-password) | ✅ implemented |
 | admin (staff CRUD, customers) | ✅ implemented |
-| products / variants / plans | ⬜ |
-| tax-rules / discount-rules | ⬜ |
-| quote-templates / quotations | ⬜ |
-| subscriptions + transitions | ⬜ |
+| products / variants | ✅ implemented |
+| plans (+ close/reopen) | ✅ implemented |
+| tax-rules / discount-rules | ✅ implemented |
+| quote-templates | ✅ implemented |
+| quotations (list/create/patch/send/cancel) | ✅ implemented |
+| quotations confirm (→ subscription) | ⬜ next block (subscriptions module) — returns 501 |
+| quotations pdf | ⬜ returns 501 |
+| subscriptions + transitions | ⬜ next block |
 | billing runs + attempts + retry | ⬜ |
 | invoices | ⬜ |
 | payments | ⬜ |
 | reports / insights | ⬜ |
 | odoo | ⬜ (flag off) |
+
+Notes as implemented:
+- All list endpoints return the envelope `{items, total, page, page_size}` (templates, tax and
+  discount rule lists currently return bare arrays — small groups; frontend should handle both).
+- `GET /customers` for a customer role returns their own record (single item), not 403.
+- Quotation `status` reads `expired` lazily when `valid_until < today` (no DB write on read).
