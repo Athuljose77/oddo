@@ -103,3 +103,12 @@ draft → quotation → confirmed → active ⇄ paused → closed
 
 - `feature/backend` (M1), `feature/ai-engine` (M2), `feature/frontend` (M3), `feature/integration` (M4).
 - Conventional commits, push ≥ hourly, no force-push on shared branches, `main` always deployable.
+
+## Shared Supabase dev database
+
+- **One Supabase project** for the whole team: local dev, deployment, seeds, perf tests.
+- It is a **re-seedable dev DB, not precious data** — M2's generator may wipe and rebuild it.
+- `DATABASE_URL` form: `postgresql+psycopg://...?sslmode=require` (psycopg3 driver; `+psycopg` is mandatory).
+- Credentials live in each member's local `.env` and Railway env vars — **never in the repo, never in chat**.
+- **Tests run on SQLite only** (`tests/conftest.py` forces it): the suite wipes all tables before
+  every test and must never point at the shared Supabase database.
