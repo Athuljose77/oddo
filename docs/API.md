@@ -379,8 +379,8 @@ Rule-based scoring is the baseline; ML only if it beats the baseline on holdout 
 | quotations (list/create/patch/send/cancel) | ✅ implemented |
 | quotations confirm (→ subscription) | ✅ implemented |
 | quotations pdf | ⬜ returns 501 |
-| subscriptions + transitions | ✅ implemented (bill-now ⬜ returns 501) |
-| billing runs + attempts + retry | ⬜ |
+| subscriptions + transitions | ✅ implemented (bill-now ✅ live) |
+| billing runs + attempts + retry | ✅ implemented (dry_run/live, catch-up capped, idempotent, retry in place) |
 | invoices | ⬜ |
 | payments | ⬜ |
 | reports / insights | ⬜ |

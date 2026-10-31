@@ -406,8 +406,14 @@ class TestListAndPatch:
         r = client.patch(f"/api/v1/subscriptions/{sub['id']}", headers=hs, json={"payment_terms": "Net 15"})
         assert r.status_code == 409
 
-    def test_bill_now_501_until_billing_block(self, client, make_user):
+    def test_bill_now_requires_active_subscription(self, client, make_user):
+        """bill-now runs the engine scoped to one subscription; a draft sub is not
+        billable, so the run completes with nothing selected (no 501 anymore)."""
         _, staff_token, customer, _, product, plan = _setup(client, make_user)
         sub = _create_sub(client, staff_token, customer.id, plan["id"], product["id"]).json()
         r = client.post(f"/api/v1/subscriptions/{sub['id']}/bill-now", headers=auth_header(staff_token))
-        assert r.status_code == 501
+        assert r.status_code == 200
+        body = r.json()
+        assert body["mode"] == "live"
+        assert body["selected_count"] == 0
+        assert body["created_count"] == 0
