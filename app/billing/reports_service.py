@@ -198,35 +198,6 @@ def get_overdue(db: Session, page: int = 1, page_size: int = 20) -> dict:
 
 # ------------------------------------------------------------------ risk scoring
 
-_RISK_FACTORS = [
-    # (name, weight, extractor fn returning a numeric value)
-    ("late_payments", 30, lambda sub, db, today: _count_late_payments(sub, db, today)),
-    ("outstanding_invoices", 25, lambda sub, db, today: _count_outstanding(sub, db)),
-    ("expiry_approaching_days", 27, lambda sub, db, today: _expiry_days(sub, today)),
-    ("paused_recently", 18, lambda sub, db, today: 1 if sub.status == "paused" else 0),
-]
-
-
-def _count_late_payments(sub: Subscription, db: Session, today: date) -> int:
-    overdue = db.scalars(
-        select(Invoice).where(
-            Invoice.subscription_id == sub.id,
-            Invoice.status == "confirmed",
-            Invoice.due_date < today,
-        )
-    ).all()
-    return len(overdue)
-
-
-def _count_outstanding(sub: Subscription, db: Session) -> int:
-    return db.scalar(
-        select(func.count(Invoice.id)).where(
-            Invoice.subscription_id == sub.id,
-            Invoice.status == "confirmed",
-        )
-    ) or 0
-
-
 def _expiry_days(sub: Subscription, today: date) -> int:
     """Days until expiry (0 when no expiry or past)."""
     if sub.expiry_date is None:
@@ -235,13 +206,24 @@ def _expiry_days(sub: Subscription, today: date) -> int:
     return max(0, delta) if delta <= 60 else 0
 
 
-def _score_subscription(sub: Subscription, db: Session, today: date) -> dict:
+def _score_subscription(
+    sub: Subscription,
+    late_payments: int,
+    outstanding_invoices: int,
+    today: date,
+) -> dict:
     factors = []
     raw_score = 0
-    for name, weight, extractor in _RISK_FACTORS:
-        value = extractor(sub, db, today)
-        # Normalise to weight contribution (cap at weight)
-        contribution = min(weight, int(value * weight / max(1, _factor_max(name))))
+
+    factor_specs = [
+        ("late_payments", 30, late_payments, 3),
+        ("outstanding_invoices", 25, outstanding_invoices, 3),
+        ("expiry_approaching_days", 27, _expiry_days(sub, today), 60),
+        ("paused_recently", 18, 1 if sub.status == "paused" else 0, 1),
+    ]
+
+    for name, weight, value, f_max in factor_specs:
+        contribution = min(weight, int(value * weight / max(1, f_max)))
         raw_score += contribution
         if contribution > 0:
             factors.append({
@@ -269,24 +251,39 @@ def _score_subscription(sub: Subscription, db: Session, today: date) -> dict:
     }
 
 
-def _factor_max(name: str) -> int:
-    maxes = {
-        "late_payments": 3,
-        "outstanding_invoices": 3,
-        "expiry_approaching_days": 60,
-        "paused_recently": 1,
-    }
-    return maxes.get(name, 1)
-
-
 def get_risk(db: Session, band: str | None = None, page: int = 1, page_size: int = 20) -> dict:
     today = _today()
+
+    # Pre-aggregate overdue and outstanding counts in 2 instant queries instead of 7000+ individual queries
+    late_map = dict(
+        db.execute(
+            select(Invoice.subscription_id, func.count(Invoice.id))
+            .where(Invoice.status == "confirmed", Invoice.due_date < today)
+            .group_by(Invoice.subscription_id)
+        ).all()
+    )
+    outstanding_map = dict(
+        db.execute(
+            select(Invoice.subscription_id, func.count(Invoice.id))
+            .where(Invoice.status == "confirmed")
+            .group_by(Invoice.subscription_id)
+        ).all()
+    )
+
     subs = db.scalars(
         select(Subscription).where(Subscription.status.in_(["active", "paused"]))
     ).all()
 
     scored = sorted(
-        [_score_subscription(s, db, today) for s in subs],
+        [
+            _score_subscription(
+                s,
+                late_map.get(s.id, 0),
+                outstanding_map.get(s.id, 0),
+                today,
+            )
+            for s in subs
+        ],
         key=lambda x: x["score"],
         reverse=True,
     )
