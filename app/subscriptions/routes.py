@@ -200,8 +200,11 @@ def bill_subscription_now(
     db: Session = Depends(get_db),
     user=Depends(require_staff),
 ):
+    """Single-subscription billing — same guards as a full run (one run at a time,
+    idempotent). Returns the run response scoped to this subscription."""
     _subscription_visible(db, subscription_id, user)
-    raise HTTPException(
-        status.HTTP_501_NOT_IMPLEMENTED,
-        "Single-subscription billing lands with the billing engine — see docs/API.md status table",
+    from app.billing import engine as billing_engine
+
+    return billing_engine.run_billing(
+        db, mode="live", user=user, subscription_id=subscription_id
     )
