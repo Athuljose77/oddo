@@ -19,12 +19,13 @@ from collections import defaultdict
 from datetime import date, timedelta
 from decimal import Decimal
 
-from sqlalchemy import func, select
+from sqlalchemy import String, func, select
 from sqlalchemy.orm import Session
 
 from app.auth.models import User
 from app.billing.invoice_service import _is_overdue, _outstanding, _today
 from app.billing.models import Invoice, Payment
+from app.catalog.models import Plan
 from app.subscriptions.models import Subscription
 
 ZERO = Decimal("0")
@@ -42,17 +43,39 @@ def _mrr_contribution(sub: Subscription) -> Decimal:
     return (price * factor).quantize(TWO)
 
 
+def _live_mrr(db: Session) -> Decimal:
+    plans = {p.id: p for p in db.scalars(select(Plan)).all()}
+    counts = db.execute(
+        select(Subscription.plan_id, func.count(Subscription.id))
+        .where(Subscription.status == "active")
+        .group_by(Subscription.plan_id)
+    ).all()
+    cycle_map = {
+        "daily": Decimal("365") / 12,
+        "weekly": Decimal("52") / 12,
+        "monthly": Decimal("1"),
+        "yearly": Decimal("1") / 12,
+    }
+    total = ZERO
+    for plan_id, count in counts:
+        p = plans.get(plan_id)
+        if not p:
+            continue
+        price = Decimal(str(p.price))
+        factor = cycle_map.get(p.billing_cycle, Decimal("1"))
+        total += Decimal(count) * (price * factor)
+    return total.quantize(TWO)
+
+
 # ------------------------------------------------------------------ summary
 
 def get_summary(db: Session, from_date: date | None = None, to_date: date | None = None) -> dict:
     today = _today()
 
-    # active subscription count + MRR
-    active_subs = list(
-        db.scalars(select(Subscription).where(Subscription.status == "active")).all()
-    )
-    active_count = len(active_subs)
-    mrr = sum((_mrr_contribution(s) for s in active_subs), ZERO)
+    active_count = db.scalar(
+        select(func.count(Subscription.id)).where(Subscription.status == "active")
+    ) or 0
+    mrr = _live_mrr(db)
 
     # revenue collected (sum of confirmed payments in window)
     pay_stmt = select(func.sum(Payment.amount))
@@ -62,17 +85,36 @@ def get_summary(db: Session, from_date: date | None = None, to_date: date | None
         pay_stmt = pay_stmt.where(Payment.paid_at <= to_date)
     revenue_collected = Decimal(str(db.scalar(pay_stmt) or 0))
 
-    # outstanding across non-cancelled, non-draft invoices
-    confirmed_invs = list(
-        db.scalars(
-            select(Invoice).where(Invoice.status.in_(["confirmed"]))
-        ).all()
+    # outstanding & unsettled across confirmed invoices in 1 instant query
+    confirmed_stats = db.execute(
+        select(
+            func.count(Invoice.id),
+            func.sum(Invoice.total - Invoice.paid_amount)
+        ).where(Invoice.status == "confirmed")
+    ).first()
+    unsettled_count = (confirmed_stats[0] or 0) if confirmed_stats else 0
+    outstanding_total = (
+        Decimal(str(confirmed_stats[1] or 0))
+        if (confirmed_stats and confirmed_stats[1] is not None)
+        else ZERO
     )
-    outstanding_total = sum((_outstanding(i) for i in confirmed_invs), ZERO)
 
-    overdue_invs = [i for i in confirmed_invs if _is_overdue(i, today)]
-    overdue_count = len(overdue_invs)
-    overdue_amount = sum((_outstanding(i) for i in overdue_invs), ZERO)
+    overdue_stats = db.execute(
+        select(
+            func.count(Invoice.id),
+            func.sum(Invoice.total - Invoice.paid_amount)
+        ).where(
+            Invoice.status == "confirmed",
+            Invoice.due_date < today,
+            Invoice.paid_amount < Invoice.total
+        )
+    ).first()
+    overdue_count = (overdue_stats[0] or 0) if overdue_stats else 0
+    overdue_amount = (
+        Decimal(str(overdue_stats[1] or 0))
+        if (overdue_stats and overdue_stats[1] is not None)
+        else ZERO
+    )
 
     # recent payments (last 5)
     recent_payments = list(
@@ -84,10 +126,15 @@ def get_summary(db: Session, from_date: date | None = None, to_date: date | None
     return {
         "active_subscriptions": active_count,
         "mrr": mrr,
+        "arr": (mrr * 12).quantize(TWO),
         "revenue_collected": revenue_collected,
         "outstanding": outstanding_total,
+        "unsettled_total": outstanding_total,
+        "unsettled_invoices_count": unsettled_count,
         "overdue_count": overdue_count,
+        "overdue_invoices_count": overdue_count,
         "overdue_amount": overdue_amount,
+        "overdue_total": overdue_amount,
         "recent_payments": [
             {
                 "id": p.id,
@@ -107,18 +154,19 @@ def get_mrr(db: Session, months: int = 24) -> dict:
     today = _today()
     current_month = today.replace(day=1)
 
-    # Build a map month_str → collected_revenue from confirmed invoices
-    # (issue_date used as the reporting month)
+    # Fast SQL aggregation by year-month
+    month_col = func.substr(func.cast(Invoice.issue_date, String), 1, 7)
     rows = db.execute(
-        select(Invoice.issue_date, Invoice.subtotal).where(
-            Invoice.status.in_(["confirmed", "paid"])
-        )
+        select(month_col, func.sum(Invoice.subtotal))
+        .where(Invoice.status.in_(["confirmed", "paid"]))
+        .group_by(month_col)
     ).all()
 
-    monthly_revenue: dict[str, Decimal] = defaultdict(Decimal)
-    for issue_date, subtotal in rows:
-        key = issue_date.strftime("%Y-%m")
-        monthly_revenue[key] += Decimal(str(subtotal))
+    monthly_revenue: dict[str, Decimal] = {
+        str(ym): Decimal(str(val or 0)) for ym, val in rows
+    }
+
+    live_mrr_val = _live_mrr(db)
 
     # Produce series starting from (months) ago
     series = []
@@ -126,18 +174,25 @@ def get_mrr(db: Session, months: int = 24) -> dict:
         m = _month_offset(current_month, -delta)
         key = m.strftime("%Y-%m")
         if m < current_month:
-            series.append({
-                "month": key,
-                "mrr": monthly_revenue.get(key, ZERO).quantize(TWO),
-                "kind": "actual",
-            })
+            val = monthly_revenue.get(key, ZERO).quantize(TWO)
         else:
-            # current month — use live MRR
-            series.append({
-                "month": key,
-                "mrr": _live_mrr(db).quantize(TWO),
-                "kind": "actual",
-            })
+            val = live_mrr_val.quantize(TWO)
+        series.append({
+            "month": key,
+            "period": key,
+            "mrr": val,
+            "growth_pct": 0.0,
+            "kind": "actual",
+            "type": "Historical" if m < current_month else "Current",
+        })
+
+    # Calculate month-over-month growth_pct
+    for i in range(1, len(series)):
+        prev_mrr = series[i - 1]["mrr"]
+        curr_mrr = series[i]["mrr"]
+        if prev_mrr > 0:
+            growth = round(float((curr_mrr - prev_mrr) / prev_mrr * 100), 1)
+            series[i]["growth_pct"] = growth
 
     # Append simple linear projection for next 3 months
     recent_actuals = [row["mrr"] for row in series if row["kind"] == "actual"]
@@ -145,17 +200,22 @@ def get_mrr(db: Session, months: int = 24) -> dict:
         trend = (recent_actuals[-1] - recent_actuals[0]) / max(1, len(recent_actuals) - 1)
         for i in range(1, 4):
             m = _month_offset(current_month, i)
-            projected = (recent_actuals[-1] + trend * i).quantize(TWO)
+            key = m.strftime("%Y-%m")
+            projected = max(ZERO, (recent_actuals[-1] + trend * i).quantize(TWO))
+            prev_val = series[-1]["mrr"]
+            growth = round(float((projected - prev_val) / prev_val * 100), 1) if prev_val > 0 else 0.0
             series.append({
-                "month": m.strftime("%Y-%m"),
-                "mrr": max(ZERO, projected),
+                "month": key,
+                "period": key,
+                "mrr": projected,
+                "growth_pct": growth,
                 "kind": "projection",
+                "type": "Projected",
             })
 
-    current_mrr = _live_mrr(db)
     return {
-        "current_mrr": current_mrr.quantize(TWO),
-        "arr": (current_mrr * 12).quantize(TWO),
+        "current_mrr": live_mrr_val.quantize(TWO),
+        "arr": (live_mrr_val * 12).quantize(TWO),
         "normalization": {
             "daily": "price*365/12",
             "weekly": "price*52/12",
@@ -164,11 +224,6 @@ def get_mrr(db: Session, months: int = 24) -> dict:
         },
         "series": series,
     }
-
-
-def _live_mrr(db: Session) -> Decimal:
-    active = db.scalars(select(Subscription).where(Subscription.status == "active")).all()
-    return sum((_mrr_contribution(s) for s in active), ZERO)
 
 
 def _month_offset(base: date, delta: int) -> date:
@@ -243,10 +298,14 @@ def _score_subscription(
     return {
         "subscription_id": sub.id,
         "subscription_number": sub.number,
+        "customer_id": sub.customer_id,
         "customer_name": sub.customer_name,
         "score": raw_score,
+        "risk_score": raw_score,
         "band": band,
+        "risk_level": band,
         "factors": factors,
+        "reasons": [f["name"].replace("_", " ") for f in factors],
         "action": action,
     }
 
@@ -339,12 +398,19 @@ def get_forecast(db: Session, horizon: int = 3) -> dict:
         trend = beta * (level - prev_level) + (1 - beta) * trend
 
     points = []
+    prev_val = Decimal(str(round(level, 2)))
     for i in range(1, horizon + 1):
         m = _month_offset(current_month, i)
         value = max(0.0, level + i * trend)
+        dec_val = Decimal(str(round(value, 2)))
+        growth = round(float((dec_val - prev_val) / prev_val * 100), 1) if prev_val > 0 else 0.0
+        prev_val = dec_val
         points.append({
             "month": m.strftime("%Y-%m"),
-            "value": Decimal(str(round(value, 2))),
+            "period": m.strftime("%Y-%m"),
+            "value": dec_val,
+            "mrr": dec_val,
+            "growth_pct": growth,
         })
 
     confidence = "high" if len(history) >= 12 else ("medium" if len(history) >= 6 else "low")
