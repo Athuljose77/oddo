@@ -387,6 +387,10 @@ Rule-based scoring is the baseline; ML only if it beats the baseline on holdout 
 | odoo | ⬜ (flag off) |
 
 Notes as implemented:
+- **Money is serialized as a JSON string** (`"total": "1999.00"`, `"unit_price": "999.50"`) —
+  backend uses `Decimal` to guarantee exact arithmetic. Frontend: `parseFloat(x)` before
+  math, and format for display (e.g. `Intl.NumberFormat`). Never add money values as strings.
+- Dates are ISO `YYYY-MM-DD`; timestamps are UTC ISO-8601.
 - All list endpoints return the envelope `{items, total, page, page_size}` (templates, tax and
   discount rule lists currently return bare arrays — small groups; frontend should handle both).
 - `GET /customers` for a customer role returns their own record (single item), not 403.

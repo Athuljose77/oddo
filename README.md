@@ -13,6 +13,7 @@ Unifies the full recurring-revenue lifecycle:
 |---|---|
 | [`docs/PROJECT_BRIEF.md`](docs/PROJECT_BRIEF.md) | Full problem statement, modules, priorities, demo plan |
 | [`docs/API.md`](docs/API.md) | **Frozen API contract** — frontend mocks against this |
+| [`docs/FRONTEND_GUIDE.md`](docs/FRONTEND_GUIDE.md) | **M3 start here** — local setup, live vs mock screens, wire-format gotchas |
 | [`docs/CONVENTIONS.md`](docs/CONVENTIONS.md) | Financial/date/lifecycle/Git rules everyone follows |
 
 ## Stack
