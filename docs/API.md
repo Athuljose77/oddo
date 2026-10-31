@@ -377,9 +377,9 @@ Rule-based scoring is the baseline; ML only if it beats the baseline on holdout 
 | tax-rules / discount-rules | ✅ implemented |
 | quote-templates | ✅ implemented |
 | quotations (list/create/patch/send/cancel) | ✅ implemented |
-| quotations confirm (→ subscription) | ⬜ next block (subscriptions module) — returns 501 |
+| quotations confirm (→ subscription) | ✅ implemented |
 | quotations pdf | ⬜ returns 501 |
-| subscriptions + transitions | ⬜ next block |
+| subscriptions + transitions | ✅ implemented (bill-now ⬜ returns 501) |
 | billing runs + attempts + retry | ⬜ |
 | invoices | ⬜ |
 | payments | ⬜ |
@@ -391,3 +391,10 @@ Notes as implemented:
   discount rule lists currently return bare arrays — small groups; frontend should handle both).
 - `GET /customers` for a customer role returns their own record (single item), not 403.
 - Quotation `status` reads `expired` lazily when `valid_until < today` (no DB write on read).
+- Subscription confirm transitions (`send/revise/confirm/activate/pause/resume/renew/close`)
+  are all `POST /subscriptions/{id}/{action}` returning the full subscription (with `lines`
+  and `events` status history). `renew` from `active` extends expiry by one cycle when
+  `new_expiry_date` is omitted; from `closed` it re-anchors `next_billing_date` forward
+  (no back-billing for the closed gap). `close` while a term remains requires
+  `plan.allow_early_close`; the `early` flag in the body is informational — the server
+  validates against `expiry_date`.

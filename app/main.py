@@ -10,6 +10,7 @@ from app.catalog.routes import router as catalog_router
 from app.core.config import get_settings
 from app.core.database import SessionLocal
 from app.quoting.routes import router as quoting_router
+from app.subscriptions.routes import router as subscriptions_router
 
 settings = get_settings()
 
@@ -41,6 +42,7 @@ app.include_router(auth_router)
 app.include_router(admin_router)
 app.include_router(catalog_router)
 app.include_router(quoting_router)
+app.include_router(subscriptions_router)
 
 
 @app.get("/health", tags=["health"])

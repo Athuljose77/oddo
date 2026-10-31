@@ -9,6 +9,7 @@ from app.core.pagination import paginate
 from app.quoting import service
 from app.quoting.models import Quotation, QuotationLine, QuoteTemplate, QuoteTemplateLine
 from app.quoting.schemas import (
+    ConfirmOut,
     QuotationCreateIn,
     QuotationLineIn,
     QuotationOut,
@@ -234,19 +235,21 @@ def send_quotation(
     return _serialize(service.send_quotation(db, quotation))
 
 
-@router.post("/quotations/{quotation_id}/confirm", response_model=QuotationOut, status_code=status.HTTP_201_CREATED)
+@router.post("/quotations/{quotation_id}/confirm", response_model=ConfirmOut, status_code=status.HTTP_201_CREATED)
 def confirm_quotation(
     quotation_id: int,
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
     """Convert quotation → subscription (customer accepts, or staff confirms)."""
+    from app.subscriptions.service import convert_quotation  # local: subscriptions imports quoting
+
     quotation = _quotation_visible(db, quotation_id, user)
     if user.role == "customer" and quotation.status != "sent":
         raise HTTPException(status.HTTP_409_CONFLICT, "Only a sent quotation can be accepted")
     service.ensure_convertible(quotation)
-    service.quotation_to_subscription(db, quotation)  # 501 until subscriptions module
-    return _serialize(quotation)
+    subscription = convert_quotation(db, quotation, user)  # single transaction, exactly once
+    return {"quotation": _serialize(quotation), "subscription": subscription}
 
 
 @router.post("/quotations/{quotation_id}/cancel", response_model=QuotationOut)

@@ -223,7 +223,7 @@ class TestLifecycle:
         r = client.post(f"/api/v1/quotations/{quote['id']}/confirm", headers=auth_header(staff_token))
         assert r.status_code == 409
 
-    def test_confirm_returns_501_until_subscriptions_module(self, client, make_user):
+    def test_confirm_converts_to_subscription(self, client, make_user):
         admin_token, staff_token, customer, product, plan = _setup(client, make_user)
         quote = client.post(
             "/api/v1/quotations",
@@ -236,8 +236,11 @@ class TestLifecycle:
         ).json()
         client.post(f"/api/v1/quotations/{quote['id']}/send", headers=auth_header(staff_token))
         r = client.post(f"/api/v1/quotations/{quote['id']}/confirm", headers=auth_header(staff_token))
-        assert r.status_code == 501
-
+        assert r.status_code == 201
+        body = r.json()
+        assert body["quotation"]["status"] == "confirmed"
+        assert body["subscription"]["number"].startswith("SUB-")
+        assert body["subscription"]["status"] == "confirmed"
     def test_cancel_and_edit_rules(self, client, make_user):
         admin_token, staff_token, customer, product, plan = _setup(client, make_user)
         hs = auth_header(staff_token)
