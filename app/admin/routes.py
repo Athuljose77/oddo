@@ -65,7 +65,8 @@ CustomerOut = UserOut  # customers are users with role='customer'
 def list_customers(
     q: str | None = Query(None, min_length=1),
     page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
+    page_size: int = Query(20, ge=1, le=500),
+    sort: str | None = Query("desc"),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -76,7 +77,13 @@ def list_customers(
     if q:
         pattern = f"%{q}%"
         stmt = stmt.where(or_(User.name.ilike(pattern), User.email.ilike(pattern)))
-    return paginate(db, stmt.order_by(User.id), page, page_size)
+    if sort == "asc":
+        stmt = stmt.order_by(User.id.asc())
+    elif sort == "name":
+        stmt = stmt.order_by(User.name.asc())
+    else:
+        stmt = stmt.order_by(User.id.desc())
+    return paginate(db, stmt, page, page_size)
 
 
 @router.get("/customers/{customer_id}", response_model=UserOut)
