@@ -10,9 +10,10 @@ import app.auth.models  # noqa: F401 — register models on Base.metadata
 config = context.config
 
 # DATABASE_URL env var is authoritative (local .env / Railway / Supabase)
-db_url = os.environ.get("DATABASE_URL")
-if db_url:
-    config.set_main_option("sqlalchemy.url", db_url)
+from app.core.config import get_settings
+
+db_url = os.environ.get("DATABASE_URL") or get_settings().database_url
+config.set_main_option("sqlalchemy.url", db_url)
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
