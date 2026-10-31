@@ -1,222 +1,775 @@
-
-import { useState, useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
-  LayoutDashboard, Layers, Repeat, Users, Receipt,
-  ChartNoAxesCombined, Settings, Search, Bell, Plus,
-  ArrowUpRight, ArrowDownRight, MoreHorizontal,
-  CalendarDays, CreditCard, CircleCheck, Clock,
-  AlertCircle, X, ChevronDown, Menu, Sparkles,
-  Download, Filter, ArrowRight, Zap
+  LayoutDashboard,
+  Layers,
+  Repeat,
+  Users,
+  Receipt,
+  ChartNoAxesCombined,
+  Settings,
+  Search,
+  Bell,
+  Plus,
+  ArrowUpRight,
+  ArrowDownRight,
+  MoreHorizontal,
+  CalendarDays,
+  CreditCard,
+  CircleCheck,
+  Clock,
+  AlertCircle,
+  X,
+  ChevronDown,
+  Menu,
+  Sparkles,
+  Download,
+  ArrowRight,
+  Zap,
+  LogOut,
+  RefreshCw,
+  Info,
 } from "lucide-react";
 import "./App.css";
+import { API_BASE, api, clearToken, getToken, setToken } from "./api";
 
-const initialSubscriptions = [
-  { id: "SUB-001", customer: "Olivia Rhye", email: "olivia@example.com", plan: "Pro Plan", amount: 49, cycle: "Monthly", status: "Active", date: "Nov 12, 2026" },
-  { id: "SUB-002", customer: "Phoenix Baker", email: "phoenix@example.com", plan: "Enterprise", amount: 199, cycle: "Monthly", status: "Active", date: "Nov 15, 2026" },
-  { id: "SUB-003", customer: "Lana Steiner", email: "lana@example.com", plan: "Starter", amount: 19, cycle: "Monthly", status: "Pending", date: "Nov 18, 2026" },
-  { id: "SUB-004", customer: "Demi Wilkinson", email: "demi@example.com", plan: "Pro Plan", amount: 49, cycle: "Monthly", status: "Cancelled", date: "Nov 20, 2026" },
-  { id: "SUB-005", customer: "Candice Wu", email: "candice@example.com", plan: "Enterprise", amount: 199, cycle: "Yearly", status: "Active", date: "Nov 22, 2026" },
-  { id: "SUB-006", customer: "Natali Craig", email: "natali@example.com", plan: "Starter", amount: 19, cycle: "Monthly", status: "Active", date: "Nov 25, 2026" },
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const CYCLE_LABEL = { daily: "day", weekly: "week", monthly: "month", yearly: "year" };
+const PLAN_COLORS = ["starter", "pro", "enterprise"];
+const PLAN_DOT_COLORS = ["#169b65", "#7ba6d5", "#f0b16b", "#c7a3e0"];
+const EMPTY_DATA = { subscriptions: [], plans: [], customers: [], products: [] };
+
+const DEMO_INVOICES = [
+  { id: "INV-2026-001", customer: "Demo customer", date: "2026-10-12", amount: 49, status: "paid" },
+  { id: "INV-2026-002", customer: "Demo customer", date: "2026-10-15", amount: 199, status: "paid" },
+  { id: "INV-2026-003", customer: "Demo customer", date: "2026-10-18", amount: 19, status: "pending" },
+  { id: "INV-2026-004", customer: "Demo customer", date: "2026-10-20", amount: 49, status: "overdue" },
 ];
 
-const plans = [
-  { name: "Starter", price: 19, description: "For individuals getting started", features: ["Basic analytics", "Email support", "1 team member"], color: "starter", count: 124 },
-  { name: "Pro Plan", price: 49, description: "For growing businesses", features: ["Advanced analytics", "Priority support", "10 team members"], color: "pro", count: 86 },
-  { name: "Enterprise", price: 199, description: "For established organizations", features: ["Custom analytics", "Dedicated support", "Unlimited members"], color: "enterprise", count: 32 },
-];
+// ---------------------------------------------------------------- helpers
+function toNumber(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : 0;
+}
 
-const customers = [
-  { name: "Olivia Rhye", email: "olivia@example.com", company: "Olivia Studio", joined: "Oct 12, 2026", plan: "Pro Plan" },
-  { name: "Phoenix Baker", email: "phoenix@example.com", company: "Baker Co.", joined: "Oct 15, 2026", plan: "Enterprise" },
-  { name: "Lana Steiner", email: "lana@example.com", company: "Lana Designs", joined: "Oct 18, 2026", plan: "Starter" },
-  { name: "Demi Wilkinson", email: "demi@example.com", company: "Demi Creative", joined: "Oct 20, 2026", plan: "Pro Plan" },
-  { name: "Candice Wu", email: "candice@example.com", company: "Wu Industries", joined: "Oct 22, 2026", plan: "Enterprise" },
-];
+function titleCase(value) {
+  const text = String(value || "").replace(/_/g, " ");
+  return text ? text.charAt(0).toUpperCase() + text.slice(1) : "Unknown";
+}
 
-const invoices = [
-  { id: "INV-2026-001", customer: "Olivia Rhye", date: "Oct 12, 2026", amount: "$49.00", status: "Paid" },
-  { id: "INV-2026-002", customer: "Phoenix Baker", date: "Oct 15, 2026", amount: "$199.00", status: "Paid" },
-  { id: "INV-2026-003", customer: "Lana Steiner", date: "Oct 18, 2026", amount: "$19.00", status: "Pending" },
-  { id: "INV-2026-004", customer: "Demi Wilkinson", date: "Oct 20, 2026", amount: "$49.00", status: "Overdue" },
-];
+function formatMoney(value) {
+  return new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(toNumber(value));
+}
 
-const navGroups = [
-  {
-    title: "WORKSPACE",
-    items: [
-      { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
-      { id: "subscriptions", label: "Subscriptions", icon: Repeat },
-      { id: "plans", label: "Plans & Pricing", icon: Layers },
-      { id: "customers", label: "Customers", icon: Users },
-      { id: "invoices", label: "Invoices & Billing", icon: Receipt },
-    ],
-  },
-  {
-    title: "INSIGHTS",
-    items: [
-      { id: "analytics", label: "Analytics", icon: ChartNoAxesCombined },
-    ],
-  },
-];
+function parseDate(value) {
+  if (!value) return null;
+  const raw = String(value);
+  const date = new Date(raw.length <= 10 ? `${raw}T00:00:00` : raw);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
 
+function formatDate(value) {
+  const date = parseDate(value);
+  return date
+    ? date.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })
+    : "—";
+}
+
+function formatDateTime(value) {
+  const date = parseDate(value);
+  return date
+    ? date.toLocaleString("en-IN", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+    : "—";
+}
+
+function formatTime(value) {
+  const date = parseDate(value);
+  return date ? date.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "—";
+}
+
+function monthlyFrom(price, cycle) {
+  const factors = { daily: 365 / 12, weekly: 52 / 12, monthly: 1, yearly: 1 / 12 };
+  return toNumber(price) * (factors[cycle] ?? 1);
+}
+
+function daysUntil(value) {
+  const date = parseDate(value);
+  if (!date) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return Math.round((date.getTime() - today.getTime()) / 86_400_000);
+}
+
+function normalizeEvent(event) {
+  return {
+    id: event.id ?? `${event.to_status || event.status}-${event.created_at || event.at}`,
+    status: String(event.to_status || event.status || "updated").toLowerCase(),
+    note: event.note || "",
+    actor: event.actor_name || event.actor?.name || "System",
+    at: event.created_at || event.at || null,
+  };
+}
+
+function normalizeLine(line) {
+  return {
+    id: line.id ?? `${line.product_id}-${line.description || line.unit_price}`,
+    product: line.product?.name || line.description || "Product",
+    quantity: toNumber(line.quantity),
+    unitPrice: toNumber(line.unit_price),
+    discount: toNumber(line.discount_amount),
+    taxRate: toNumber(line.tax_rate),
+    taxAmount: toNumber(line.tax_amount),
+    total: toNumber(line.line_total),
+  };
+}
+
+function normalizeSubscription(raw) {
+  const customer = raw.customer && typeof raw.customer === "object" ? raw.customer : {};
+  const plan = raw.plan && typeof raw.plan === "object" ? raw.plan : {};
+  const planPrice = toNumber(plan.price ?? raw.plan_price ?? 0);
+  const planCycle = plan.billing_cycle || raw.billing_cycle || "monthly";
+
+  return {
+    id: raw.id,
+    number: raw.number || `SUB-${raw.id}`,
+    customerId: raw.customer_id ?? customer.id ?? null,
+    customer: raw.customer_name || customer.name || "Unknown customer",
+    email: customer.email || raw.customer_email || "",
+    plan: raw.plan_name || plan.name || "No plan",
+    planId: raw.plan_id ?? plan.id ?? null,
+    planPrice,
+    planCycle,
+    mrr: monthlyFrom(planPrice, planCycle),
+    amount: toNumber(raw.total ?? raw.amount ?? 0),
+    cycle: planCycle,
+    status: String(raw.status || "draft").toLowerCase(),
+    nextBillingDate: raw.next_billing_date || raw.date || null,
+    startDate: raw.start_date || null,
+    expiryDate: raw.expiry_date || null,
+    paymentTerms: raw.payment_terms || null,
+    lines: Array.isArray(raw.lines) ? raw.lines.map(normalizeLine) : [],
+    events: Array.isArray(raw.events) ? raw.events.map(normalizeEvent) : [],
+    raw,
+  };
+}
+
+function normalizePlan(raw) {
+  return {
+    id: raw.id,
+    name: raw.name || "Untitled plan",
+    price: toNumber(raw.price),
+    cycle: raw.billing_cycle || "monthly",
+    minQuantity: Math.max(1, toNumber(raw.min_quantity ?? 1)),
+    status: String(raw.status || "active").toLowerCase(),
+    autoClose: Boolean(raw.auto_close),
+    allowEarlyClose: Boolean(raw.allow_early_close),
+    allowPause: Boolean(raw.allow_pause),
+    allowRenew: Boolean(raw.allow_renew),
+    availableFrom: raw.available_from || null,
+    availableTo: raw.available_to || null,
+  };
+}
+
+function normalizeCustomer(raw) {
+  return {
+    id: raw.id,
+    name: raw.name || raw.email || "Customer",
+    email: raw.email || "",
+    joined: raw.created_at || null,
+    active: raw.is_active !== false,
+    role: raw.role || "customer",
+  };
+}
+
+function buildBillingSchedule(subscriptions) {
+  const now = new Date();
+  const buckets = [];
+  for (let index = 0; index < 12; index += 1) {
+    const date = new Date(now.getFullYear(), now.getMonth() + index, 1);
+    const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+    buckets.push({ key, label: MONTHS[date.getMonth()], count: 0 });
+  }
+
+  const lookup = new Map(buckets.map((bucket) => [bucket.key, bucket]));
+  subscriptions.forEach((subscription) => {
+    if (subscription.status !== "active" || !subscription.nextBillingDate) return;
+    const date = parseDate(subscription.nextBillingDate);
+    if (!date) return;
+    const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+    const bucket = lookup.get(key);
+    if (bucket) bucket.count += 1;
+  });
+
+  return buckets;
+}
+
+const STATUS_TONE = {
+  active: "green",
+  paid: "green",
+  confirmed: "green",
+  draft: "amber",
+  quotation: "amber",
+  paused: "amber",
+  pending: "amber",
+  overdue: "red",
+  cancelled: "red",
+  closed: "red",
+  disabled: "red",
+};
+
+// ---------------------------------------------------------------- shared UI
 function Status({ value }) {
-  const type = value.toLowerCase();
-  const Icon = type === "active" || type === "paid"
-    ? CircleCheck
-    : type === "pending"
-      ? Clock
-      : AlertCircle;
+  const key = String(value || "unknown").toLowerCase();
+  const tone = STATUS_TONE[key] || "amber";
+  const Icon = tone === "green" ? CircleCheck : tone === "red" ? AlertCircle : Clock;
 
   return (
-    <span className={`status status-${type}`}>
+    <span className={`status status-${key}`}>
       <Icon size={13} />
-      {value}
+      {titleCase(key)}
     </span>
   );
 }
 
 function Avatar({ name, index = 0 }) {
   const colors = ["#E5F4EB", "#E9EDFF", "#FCEBDD", "#F9E6F0", "#E5F1F7"];
+  const safeName = name || "?";
+  const initials = safeName
+    .split(" ")
+    .map((part) => part[0])
+    .join("")
+    .slice(0, 2);
+
   return (
     <span className="avatar" style={{ background: colors[index % colors.length] }}>
-      {name.split(" ").map(part => part[0]).join("").slice(0, 2)}
+      {initials || "?"}
     </span>
   );
 }
 
-function MetricCard({ title, value, change, positive, icon: Icon, note }) {
+function MetricCard({ title, value, change, positive = true, icon: Icon, note }) {
   return (
     <div className="metric-card">
       <div className="metric-top">
         <span>{title}</span>
-        <span className="metric-icon"><Icon size={19} /></span>
+        <span className="metric-icon">
+          <Icon size={19} />
+        </span>
       </div>
       <h2>{value}</h2>
       <div className="metric-bottom">
-        <span className={positive ? "trend positive" : "trend negative"}>
-          {positive ? <ArrowUpRight size={15} /> : <ArrowDownRight size={15} />}
-          {change}
-        </span>
+        {change && (
+          <span className={positive ? "trend positive" : "trend negative"}>
+            {positive ? <ArrowUpRight size={15} /> : <ArrowDownRight size={15} />}
+            {change}
+          </span>
+        )}
         <span className="muted">{note}</span>
       </div>
     </div>
   );
 }
 
-function Dashboard({ subscriptions, setPage }) {
-  const active = subscriptions.filter(s => s.status === "Active").length;
-  const totalRevenue = subscriptions
-    .filter(s => s.status === "Active")
-    .reduce((sum, s) => sum + s.amount, 0);
+function DemoBanner({ children }) {
+  return (
+    <div className="banner banner-warning">
+      <Info size={16} />
+      <div>{children}</div>
+    </div>
+  );
+}
+
+function BillingScheduleChart({ subscriptions, large = false }) {
+  const schedule = buildBillingSchedule(subscriptions);
+  const max = Math.max(...schedule.map((bucket) => bucket.count), 1);
+  const total = schedule.reduce((sum, bucket) => sum + bucket.count, 0);
+
+  if (!total) {
+    return <p className="empty-state">No upcoming billing dates in the next 12 months.</p>;
+  }
+
+  return (
+    <div className={`chart${large ? " large-chart" : ""}`}>
+      {schedule.map((bucket) => (
+        <div className="chart-column" key={bucket.key}>
+          <div
+            className="chart-bar"
+            style={{
+              height: `${Math.max((bucket.count / max) * 100, bucket.count ? 8 : 2)}%`,
+              opacity: bucket.count ? 1 : 0.25,
+            }}
+            title={`${bucket.label}: ${bucket.count} subscription${bucket.count === 1 ? "" : "s"}`}
+          />
+          <span>{bucket.label}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function PlanMix({ subscriptions }) {
+  const active = subscriptions.filter((subscription) => subscription.status === "active");
+  const groups = new Map();
+
+  active.forEach((subscription) => {
+    const key = subscription.plan || "No plan";
+    const current = groups.get(key) || { name: key, count: 0, mrr: 0 };
+    current.count += 1;
+    current.mrr += subscription.mrr;
+    groups.set(key, current);
+  });
+
+  const rows = [...groups.values()].sort((a, b) => b.count - a.count);
+  if (!rows.length) return <p className="empty-state">No active subscriptions.</p>;
+
+  return (
+    <div className="plan-mix-list">
+      {rows.map((row, index) => (
+        <div className="plan-mix-row" key={row.name}>
+          <div className="plan-mix-name">
+            <span
+              className="dot"
+              style={{ background: PLAN_DOT_COLORS[index % PLAN_DOT_COLORS.length] }}
+            />
+            {row.name}
+          </div>
+          <div className="plan-mix-track">
+            <span
+              style={{
+                width: `${(row.count / active.length) * 100}%`,
+                background: PLAN_DOT_COLORS[index % PLAN_DOT_COLORS.length],
+              }}
+            />
+          </div>
+          <strong>
+            {row.count} · {formatMoney(row.mrr)}/mo
+          </strong>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- auth
+function AuthScreen({ onAuth, busy, error }) {
+  const [mode, setMode] = useState("login");
+  const [form, setForm] = useState({ name: "", email: "", password: "" });
+
+  function update(event) {
+    setForm((current) => ({ ...current, [event.target.name]: event.target.value }));
+  }
+
+  function submit(event) {
+    event.preventDefault();
+    onAuth({ mode, ...form });
+  }
+
+  return (
+    <div className="auth-shell">
+      <aside className="auth-aside">
+        <div className="auth-brand">
+          <span className="brand-icon">
+            <Layers size={22} />
+          </span>
+          brightloop<span className="brand-dot">.</span>
+        </div>
+        <h1>
+          Every subscription,
+          <br />
+          one clear loop.
+        </h1>
+        <p>
+          SIMULATE → VERIFY → BILL → EXPLAIN. Manage plans, customers and recurring
+          revenue from one connected workspace.
+        </p>
+        <ul className="auth-points">
+          <li>
+            <CircleCheck size={16} /> Live data from the FastAPI backend
+          </li>
+          <li>
+            <CircleCheck size={16} /> Role-aware access for admin, staff and customers
+          </li>
+          <li>
+            <CircleCheck size={16} /> Decimal-safe money rendered in INR
+          </li>
+        </ul>
+        <span className="auth-note">Odoo × Make-A-Ton 9.0 · Brightloop Subscriptions</span>
+      </aside>
+
+      <main className="auth-main">
+        <div className="auth-card">
+          <div className="auth-tabs">
+            <button
+              type="button"
+              className={mode === "login" ? "selected" : ""}
+              onClick={() => setMode("login")}
+            >
+              Sign in
+            </button>
+            <button
+              type="button"
+              className={mode === "register" ? "selected" : ""}
+              onClick={() => setMode("register")}
+            >
+              Create account
+            </button>
+          </div>
+
+          <h2>{mode === "login" ? "Welcome back" : "Create your account"}</h2>
+          <p className="auth-sub">
+            {mode === "login"
+              ? "Sign in with your Brightloop account."
+              : "Public sign-up creates a customer account. Staff accounts are created by an admin."}
+          </p>
+
+          <form onSubmit={submit}>
+            {mode === "register" && (
+              <label>
+                Full name
+                <input
+                  name="name"
+                  value={form.name}
+                  onChange={update}
+                  required
+                  minLength={1}
+                  placeholder="Acme Ltd"
+                  autoComplete="name"
+                />
+              </label>
+            )}
+            <label>
+              Email
+              <input
+                name="email"
+                type="email"
+                value={form.email}
+                onChange={update}
+                required
+                placeholder="you@company.com"
+                autoComplete="email"
+              />
+            </label>
+            <label>
+              Password
+              <input
+                name="password"
+                type="password"
+                value={form.password}
+                onChange={update}
+                required
+                placeholder="••••••••"
+                autoComplete={mode === "login" ? "current-password" : "new-password"}
+              />
+            </label>
+            {mode === "register" && (
+              <p className="auth-hint">
+                9+ characters, one uppercase, one lowercase and one special character.
+              </p>
+            )}
+
+            {error && (
+              <div className="auth-error">
+                <AlertCircle size={15} /> {error}
+              </div>
+            )}
+
+            <button className="primary-button auth-submit" type="submit" disabled={busy}>
+              {busy ? (
+                <>
+                  <RefreshCw size={15} className="spin" /> Please wait…
+                </>
+              ) : mode === "login" ? (
+                "Sign in"
+              ) : (
+                "Create account"
+              )}
+            </button>
+          </form>
+
+          <div className="auth-foot">
+            <span>
+              API: <code>{API_BASE}</code>
+            </span>
+            <span>
+              Admin accounts are bootstrapped from the backend <code>.env</code>.
+            </span>
+          </div>
+        </div>
+      </main>
+    </div>
+  );
+}
+
+function BootScreen() {
+  return (
+    <div className="boot-screen">
+      <div className="brand-icon">
+        <Layers size={22} />
+      </div>
+      <p>Connecting to Brightloop…</p>
+      <RefreshCw size={18} className="spin" />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- dashboard
+function Dashboard({ subscriptions, customers, user, isStaff, onSelect, onRefresh, loading, lastSynced }) {
+  const active = subscriptions.filter((subscription) => subscription.status === "active");
+  const mrr = active.reduce((sum, subscription) => sum + subscription.mrr, 0);
+  const expiring = active.filter((subscription) => {
+    const days = daysUntil(subscription.expiryDate);
+    return days !== null && days >= 0 && days <= 30;
+  }).length;
+  const customerCount = isStaff ? customers.length : user ? 1 : 0;
+  const scheduleTotal = buildBillingSchedule(subscriptions).reduce(
+    (sum, bucket) => sum + bucket.count,
+    0,
+  );
+
+  const planGroups = new Map();
+  active.forEach((subscription) => {
+    const key = subscription.plan || "No plan";
+    planGroups.set(key, (planGroups.get(key) || 0) + 1);
+  });
+  const planRows = [...planGroups.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4);
+  let running = 0;
+  const donutGradient = planRows.length
+    ? planRows
+        .map(([, count], index) => {
+          const start = (running / Math.max(active.length, 1)) * 100;
+          running += count;
+          const end = (running / Math.max(active.length, 1)) * 100;
+          return `${PLAN_DOT_COLORS[index % PLAN_DOT_COLORS.length]} ${start}% ${end}%`;
+        })
+        .join(", ")
+    : "#edf0ee 0 100%";
+
+  const activity = subscriptions
+    .flatMap((subscription) =>
+      subscription.events.map((event) => ({
+        ...event,
+        subscription: subscription.number,
+        customer: subscription.customer,
+      })),
+    )
+    .sort((a, b) => new Date(b.at || 0) - new Date(a.at || 0))
+    .slice(0, 4);
 
   return (
     <>
       <div className="welcome-row">
         <div>
-          <h2>Welcome back, Afra <span>✦</span></h2>
-          <p>Here's what's happening with your subscriptions today.</p>
+          <h2>
+            Welcome back, {user?.name?.split(" ")[0] || "there"} <span>✦</span>
+          </h2>
+          <p>Here is what is happening across your subscriptions.</p>
         </div>
-        <button className="secondary-button" onClick={() => setPage("analytics")}>
-          <CalendarDays size={16} /> Last 30 days <ChevronDown size={15} />
+        <button className="secondary-button" onClick={onRefresh} disabled={loading}>
+          <CalendarDays size={16} /> {lastSynced ? `Synced ${formatTime(lastSynced)}` : "Refresh"}
         </button>
       </div>
 
       <div className="metrics-grid">
-        <MetricCard title="Total Revenue" value={`$${totalRevenue.toLocaleString()}`} change="+12.8%" positive icon={CreditCard} note="vs. last month" />
-        <MetricCard title="Active Subscriptions" value={active.toString()} change="+8.2%" positive icon={Repeat} note="vs. last month" />
-        <MetricCard title="Total Customers" value="1,284" change="+10.5%" positive icon={Users} note="vs. last month" />
-        <MetricCard title="Churn Rate" value="2.4%" change="-0.6%" positive icon={ChartNoAxesCombined} note="vs. last month" />
+        <MetricCard
+          title="Estimated MRR"
+          value={formatMoney(mrr)}
+          change="ex-tax"
+          positive
+          icon={CreditCard}
+          note="active plans only"
+        />
+        <MetricCard
+          title="Active subscriptions"
+          value={active.length.toString()}
+          change={`${subscriptions.length} total`}
+          positive
+          icon={Repeat}
+          note="all statuses"
+        />
+        <MetricCard
+          title={isStaff ? "Customers" : "Your account"}
+          value={customerCount.toString()}
+          change={isStaff ? "directory" : "scoped"}
+          positive
+          icon={Users}
+          note="server-enforced"
+        />
+        <MetricCard
+          title="Expiring soon"
+          value={expiring.toString()}
+          change={expiring ? "Needs review" : "All clear"}
+          positive={!expiring}
+          icon={ChartNoAxesCombined}
+          note="next 30 days"
+        />
       </div>
 
       <div className="dashboard-grid">
         <section className="panel revenue-panel">
           <div className="panel-heading">
             <div>
-              <h3>Revenue Overview</h3>
-              <p>Monthly recurring revenue</p>
+              <h3>Upcoming billing</h3>
+              <p>Active subscriptions by next billing month</p>
             </div>
-            <button className="select-button">This year <ChevronDown size={14} /></button>
+            <span className="sync-status">{scheduleTotal} scheduled</span>
           </div>
           <div className="revenue-summary">
-            <strong>$24,680</strong>
-            <span className="trend positive"><ArrowUpRight size={15} /> 12.8%</span>
+            <strong>{active.length}</strong>
+            <span className="muted">active subscriptions in the next 12 months</span>
           </div>
-          <div className="chart">
-            {[35, 48, 42, 60, 52, 68, 58, 76, 66, 84, 73, 95].map((height, i) => (
-              <div className="chart-column" key={i}>
-                <div className="chart-bar" style={{ height: `${height}%` }} />
-                <span>{["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][i]}</span>
-              </div>
-            ))}
-          </div>
+          <BillingScheduleChart subscriptions={subscriptions} />
         </section>
 
         <section className="panel plan-panel">
           <div className="panel-heading">
-            <div><h3>Subscription Plans</h3><p>Distribution by plan</p></div>
-            <button className="icon-button" onClick={() => setPage("plans")}><MoreHorizontal size={19} /></button>
+            <div>
+              <h3>Plan distribution</h3>
+              <p>Active subscriptions by plan</p>
+            </div>
           </div>
           <div className="donut-wrap">
-            <div className="donut"><div className="donut-center"><strong>242</strong><span>Total</span></div></div>
+            <div className="donut" style={{ background: `conic-gradient(${donutGradient})` }}>
+              <div className="donut-center">
+                <strong>{active.length}</strong>
+                <span>Active</span>
+              </div>
+            </div>
           </div>
-          <div className="legend">
-            <div><span className="dot green-dot" /> Starter <strong>124</strong></div>
-            <div><span className="dot blue-dot" /> Pro Plan <strong>86</strong></div>
-            <div><span className="dot orange-dot" /> Enterprise <strong>32</strong></div>
-          </div>
+          {planRows.length ? (
+            <div className="legend">
+              {planRows.map(([name, count], index) => (
+                <div key={name}>
+                  <span
+                    className="dot"
+                    style={{ background: PLAN_DOT_COLORS[index % PLAN_DOT_COLORS.length] }}
+                  />
+                  {name} <strong>{count}</strong>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="empty-state">No active subscriptions yet.</p>
+          )}
         </section>
       </div>
 
       <section className="panel table-panel">
         <div className="panel-heading">
-          <div><h3>Recent Subscriptions</h3><p>Keep track of your latest subscriptions</p></div>
-          <button className="text-button" onClick={() => setPage("subscriptions")}>View all <ArrowRight size={15} /></button>
+          <div>
+            <h3>Recent subscriptions</h3>
+            <p>Newest records from the live API</p>
+          </div>
+          <button className="text-button" onClick={() => onSelect(null, "subscriptions")}>
+            View all <ArrowRight size={15} />
+          </button>
         </div>
-        <SubscriptionTable subscriptions={subscriptions.slice(0, 5)} />
+        <SubscriptionTable subscriptions={subscriptions.slice(0, 5)} onSelect={onSelect} />
       </section>
 
       <div className="bottom-grid">
         <section className="panel activity-panel">
-          <div className="panel-heading"><div><h3>Recent Activity</h3><p>Latest updates from your workspace</p></div></div>
-          {[
-            ["Olivia Rhye", "subscribed to Pro Plan", "10 minutes ago"],
-            ["Phoenix Baker", "upgraded to Enterprise", "1 hour ago"],
-            ["Lana Steiner", "created a new account", "3 hours ago"],
-          ].map((item, i) => (
-            <div className="activity-item" key={i}>
-              <Avatar name={item[0]} index={i} />
-              <div><strong>{item[0]}</strong><p>{item[1]}</p></div>
-              <span>{item[2]}</span>
+          <div className="panel-heading">
+            <div>
+              <h3>Recent activity</h3>
+              <p>Status changes recorded by the subscription state machine</p>
             </div>
-          ))}
+          </div>
+          {activity.length ? (
+            activity.map((event, index) => (
+              <div className="activity-item" key={event.id || index}>
+                <Avatar name={event.actor} index={index} />
+                <div>
+                  <strong>{event.subscription}</strong>
+                  <p>
+                    {event.customer} · {event.note || `moved to ${titleCase(event.status)}`}
+                  </p>
+                </div>
+                <span>{formatDateTime(event.at)}</span>
+              </div>
+            ))
+          ) : (
+            <p className="empty-state">No status events recorded yet.</p>
+          )}
         </section>
+
         <section className="upgrade-card">
-          <span className="upgrade-icon"><Sparkles size={21} /></span>
-          <h3>Everything in one place.</h3>
-          <p>Manage subscriptions, billing and customers with a single, simple workspace.</p>
-          <button onClick={() => setPage("analytics")}>Explore analytics <ArrowRight size={15} /></button>
+          <span className="upgrade-icon">
+            <Sparkles size={21} />
+          </span>
+          <h3>Live backend connected.</h3>
+          <p>
+            {lastSynced
+              ? `Last synced at ${formatTime(lastSynced)}. Billing runs and reports are the next backend blocks.`
+              : "Pull the latest subscriptions, plans and customers from FastAPI."}
+          </p>
+          <button onClick={onRefresh} disabled={loading}>
+            {loading ? "Refreshing…" : "Refresh workspace"} <ArrowRight size={15} />
+          </button>
         </section>
       </div>
     </>
   );
 }
 
-function SubscriptionTable({ subscriptions }) {
+// ---------------------------------------------------------------- tables
+function SubscriptionTable({ subscriptions, onSelect }) {
   if (!subscriptions.length) return <p className="empty-state">No subscriptions found.</p>;
 
   return (
     <div className="table-scroll">
       <table>
-        <thead><tr><th>Customer</th><th>Plan</th><th>Amount</th><th>Next billing</th><th>Status</th><th></th></tr></thead>
+        <thead>
+          <tr>
+            <th>Customer</th>
+            <th>Plan</th>
+            <th>Amount</th>
+            <th>Next billing</th>
+            <th>Status</th>
+            <th />
+          </tr>
+        </thead>
         <tbody>
-          {subscriptions.map((s, i) => (
-            <tr key={s.id}>
-              <td><div className="customer-cell"><Avatar name={s.customer} index={i} /><div><strong>{s.customer}</strong><span>{s.email}</span></div></div></td>
-              <td>{s.plan}</td>
-              <td><strong>${s.amount}.00</strong><span className="table-muted">/{s.cycle.toLowerCase()}</span></td>
-              <td>{s.date}</td>
-              <td><Status value={s.status} /></td>
-              <td><button className="icon-button"><MoreHorizontal size={18} /></button></td>
+          {subscriptions.map((subscription, index) => (
+            <tr key={subscription.id}>
+              <td>
+                <div className="customer-cell">
+                  <Avatar name={subscription.customer} index={index} />
+                  <div>
+                    <strong>{subscription.customer}</strong>
+                    <span>{subscription.email || subscription.number}</span>
+                  </div>
+                </div>
+              </td>
+              <td>{subscription.plan}</td>
+              <td>
+                <strong>{formatMoney(subscription.amount)}</strong>
+                <span className="table-muted">
+                  /{CYCLE_LABEL[subscription.cycle] || subscription.cycle}
+                </span>
+              </td>
+              <td>{formatDate(subscription.nextBillingDate)}</td>
+              <td>
+                <Status value={subscription.status} />
+              </td>
+              <td>
+                <button
+                  className="icon-button"
+                  title="View subscription"
+                  onClick={() => onSelect(subscription)}
+                >
+                  <MoreHorizontal size={18} />
+                </button>
+              </td>
             </tr>
           ))}
         </tbody>
@@ -225,226 +778,1132 @@ function SubscriptionTable({ subscriptions }) {
   );
 }
 
-function SubscriptionsPage({ subscriptions, setSubscriptions, openModal }) {
-  const [filter, setFilter] = useState("All");
-  const filtered = subscriptions.filter(s => filter === "All" || s.status === filter);
+function SubscriptionsPage({ subscriptions, isStaff, onCreate, onSelect }) {
+  const [filter, setFilter] = useState("all");
+  const filters = ["all", "active", "paused", "draft", "closed"];
+  const filtered =
+    filter === "all" ? subscriptions : subscriptions.filter((subscription) => subscription.status === filter);
 
   return (
     <section className="panel full-panel">
       <div className="panel-heading page-table-heading">
-        <div><h3>All Subscriptions</h3><p>Manage and monitor your recurring subscriptions.</p></div>
-        <button className="primary-button" onClick={openModal}><Plus size={17} /> Add subscription</button>
+        <div>
+          <h3>{isStaff ? "All subscriptions" : "My subscriptions"}</h3>
+          <p>
+            {isStaff
+              ? "Manage and monitor every recurring subscription."
+              : "The backend scopes this list to your own customer account."}
+          </p>
+        </div>
+        {isStaff && (
+          <button className="primary-button" onClick={() => onCreate()}>
+            <Plus size={17} /> Add subscription
+          </button>
+        )}
       </div>
+
       <div className="filter-row">
-        {["All", "Active", "Pending", "Cancelled"].map(f => (
-          <button key={f} className={filter === f ? "filter-tab selected" : "filter-tab"} onClick={() => setFilter(f)}>{f}</button>
+        {filters.map((status) => (
+          <button
+            key={status}
+            className={filter === status ? "filter-tab selected" : "filter-tab"}
+            onClick={() => setFilter(status)}
+          >
+            {titleCase(status)}
+          </button>
         ))}
         <span className="filter-count">{filtered.length} subscriptions</span>
       </div>
-      <SubscriptionTable subscriptions={filtered} />
+
+      <SubscriptionTable subscriptions={filtered} onSelect={onSelect} />
     </section>
   );
 }
 
-function PlansPage({ openModal }) {
-  return (
-    <div className="plans-grid">
-      {plans.map(plan => (
-        <div className={`plan-card ${plan.color}`} key={plan.name}>
-          <div className="plan-card-top"><span className="plan-symbol"><Zap size={19} /></span><span className="plan-count">{plan.count} subscribers</span></div>
-          <h3>{plan.name}</h3>
-          <p>{plan.description}</p>
-          <div className="plan-price"><strong>${plan.price}</strong><span>/ month</span></div>
-          <div className="plan-divider" />
-          <h4>What's included</h4>
-          {plan.features.map(feature => <div className="feature-line" key={feature}><CircleCheck size={16} /> {feature}</div>)}
-          <button className="plan-action" onClick={openModal}>Create subscription <ArrowRight size={15} /></button>
+// ---------------------------------------------------------------- plans
+function PlansPage({ plans, subscriptions, isStaff, onCreate }) {
+  if (!plans.length) {
+    return (
+      <section className="panel full-panel">
+        <div className="panel-heading">
+          <div>
+            <h3>Plans & pricing</h3>
+            <p>Plans are created by admins through the catalog API.</p>
+          </div>
         </div>
-      ))}
-    </div>
-  );
-}
-
-function CustomersPage() {
-  return (
-    <section className="panel full-panel">
-      <div className="panel-heading"><div><h3>Customers</h3><p>Manage your customer relationships.</p></div></div>
-      <div className="table-scroll">
-        <table>
-          <thead><tr><th>Customer</th><th>Company</th><th>Plan</th><th>Joined</th><th>Action</th></tr></thead>
-          <tbody>{customers.map((c, i) => (
-            <tr key={c.email}>
-              <td><div className="customer-cell"><Avatar name={c.name} index={i} /><div><strong>{c.name}</strong><span>{c.email}</span></div></div></td>
-              <td>{c.company}</td><td>{c.plan}</td><td>{c.joined}</td>
-              <td><button className="icon-button"><MoreHorizontal size={18} /></button></td>
-            </tr>
-          ))}</tbody>
-        </table>
-      </div>
-    </section>
-  );
-}
-
-function InvoicesPage() {
-  return (
-    <section className="panel full-panel">
-      <div className="panel-heading"><div><h3>Invoices & Billing</h3><p>View payment history and invoice statuses.</p></div><button className="secondary-button"><Download size={15} /> Export</button></div>
-      <div className="table-scroll">
-        <table>
-          <thead><tr><th>Invoice</th><th>Customer</th><th>Date</th><th>Amount</th><th>Status</th><th>Download</th></tr></thead>
-          <tbody>{invoices.map(inv => (
-            <tr key={inv.id}><td><strong>{inv.id}</strong></td><td>{inv.customer}</td><td>{inv.date}</td><td><strong>{inv.amount}</strong></td><td><Status value={inv.status} /></td><td><button className="icon-button"><Download size={17} /></button></td></tr>
-          ))}</tbody>
-        </table>
-      </div>
-    </section>
-  );
-}
-
-function AnalyticsPage() {
-  return (
-    <div className="analytics-grid">
-      <MetricCard title="Monthly recurring revenue" value="$24,680" change="+12.8%" positive icon={CreditCard} note="compared to last month" />
-      <MetricCard title="Annual recurring revenue" value="$296,160" change="+14.2%" positive icon={ChartNoAxesCombined} note="compared to last year" />
-      <MetricCard title="Customer lifetime value" value="$840" change="+5.4%" positive icon={Users} note="compared to last month" />
-      <MetricCard title="Churn rate" value="2.4%" change="-0.6%" positive icon={Repeat} note="compared to last month" />
-      <section className="panel analytics-chart">
-        <div className="panel-heading"><div><h3>Revenue performance</h3><p>Revenue growth across the year</p></div></div>
-        <div className="chart large-chart">
-          {[35, 48, 42, 60, 52, 68, 58, 76, 66, 84, 73, 95].map((height, i) => (
-            <div className="chart-column" key={i}><div className="chart-bar" style={{ height: `${height}%` }} /><span>{["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][i]}</span></div>
-          ))}
-        </div>
+        <p className="empty-state">No plans returned by the backend yet.</p>
       </section>
-    </div>
-  );
-}
-
-function SettingsPage() {
-  return (
-    <section className="panel settings-panel">
-      <h3>Workspace Settings</h3>
-      <p>Manage your workspace preferences.</p>
-      <div className="settings-row"><div><strong>Workspace name</strong><span>Your organization name</span></div><input defaultValue="Odoo Subscriptions" /></div>
-      <div className="settings-row"><div><strong>Default currency</strong><span>Currency for displaying prices</span></div><select defaultValue="USD"><option>USD</option><option>INR</option><option>EUR</option></select></div>
-      <div className="settings-row"><div><strong>Billing notifications</strong><span>Receive updates about recurring payments</span></div><input type="checkbox" defaultChecked /></div>
-      <button className="primary-button">Save changes</button>
-    </section>
-  );
-}
-
-function AddSubscriptionModal({ close, add }) {
-  const [form, setForm] = useState({ customer: "", email: "", plan: "Starter", amount: "19" });
-  const update = (e) => setForm({ ...form, [e.target.name]: e.target.value });
-
-  function submit(e) {
-    e.preventDefault();
-    if (!form.customer.trim() || !form.email.trim()) return;
-    add({
-      id: `SUB-${String(Date.now()).slice(-5)}`,
-      customer: form.customer,
-      email: form.email,
-      plan: form.plan,
-      amount: Number(form.amount),
-      cycle: "Monthly",
-      status: "Active",
-      date: "Nov 30, 2026"
-    });
-    close();
+    );
   }
 
   return (
-    <div className="modal-overlay" onMouseDown={e => { if (e.target === e.currentTarget) close(); }}>
+    <div className="plans-grid">
+      {plans.map((plan, index) => {
+        const activeCount = subscriptions.filter(
+          (subscription) => subscription.planId === plan.id && subscription.status === "active",
+        ).length;
+        const color = PLAN_COLORS[index % PLAN_COLORS.length];
+        const available = plan.status === "active";
+
+        return (
+          <div className={`plan-card ${color}`} key={plan.id}>
+            <div className="plan-card-top">
+              <span className="plan-symbol">
+                <Zap size={19} />
+              </span>
+              <span className="plan-count">{activeCount} active</span>
+            </div>
+            <h3>{plan.name}</h3>
+            <p>
+              {titleCase(plan.cycle)} billing · minimum {plan.minQuantity}
+            </p>
+            <div className="plan-price">
+              <strong>{formatMoney(plan.price)}</strong>
+              <span>/ {CYCLE_LABEL[plan.cycle] || plan.cycle}</span>
+            </div>
+            <div className="plan-divider" />
+            <h4>Plan rules</h4>
+            <div className="feature-line">
+              <CircleCheck size={16} /> {plan.allowPause ? "Pause allowed" : "Pause disabled"}
+            </div>
+            <div className="feature-line">
+              <CircleCheck size={16} /> {plan.allowRenew ? "Renewal allowed" : "Renewal disabled"}
+            </div>
+            <div className="feature-line">
+              <CircleCheck size={16} />{" "}
+              {plan.autoClose ? "Auto-closes at expiry" : "Billing may continue after expiry"}
+            </div>
+            <div className="feature-line">
+              <CircleCheck size={16} /> Early close{" "}
+              {plan.allowEarlyClose ? "allowed" : "blocked"}
+            </div>
+            <p className="plan-availability">
+              {plan.availableFrom || plan.availableTo
+                ? `Available ${formatDate(plan.availableFrom)} – ${formatDate(plan.availableTo)}`
+                : "Always available"}
+            </p>
+            {isStaff && (
+              <button
+                className="plan-action"
+                onClick={() => onCreate(plan.id)}
+                disabled={!available}
+              >
+                {available ? "Create subscription" : "Plan closed"} <ArrowRight size={15} />
+              </button>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- customers
+function CustomersPage({ customers, subscriptions }) {
+  if (!customers.length) {
+    return (
+      <section className="panel full-panel">
+        <div className="panel-heading">
+          <div>
+            <h3>Customers</h3>
+            <p>Customer accounts are created through registration or the admin API.</p>
+          </div>
+        </div>
+        <p className="empty-state">No customer accounts returned by the backend yet.</p>
+      </section>
+    );
+  }
+
+  return (
+    <section className="panel full-panel">
+      <div className="panel-heading">
+        <div>
+          <h3>Customers</h3>
+          <p>Directory of customer accounts and their active subscriptions.</p>
+        </div>
+      </div>
+      <div className="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Customer</th>
+              <th>Active subscriptions</th>
+              <th>Plans</th>
+              <th>Joined</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {customers.map((customer, index) => {
+              const customerSubs = subscriptions.filter(
+                (subscription) => subscription.customerId === customer.id,
+              );
+              const activeSubs = customerSubs.filter(
+                (subscription) => subscription.status === "active",
+              );
+              const plans = [...new Set(activeSubs.map((subscription) => subscription.plan))];
+
+              return (
+                <tr key={customer.id}>
+                  <td>
+                    <div className="customer-cell">
+                      <Avatar name={customer.name} index={index} />
+                      <div>
+                        <strong>{customer.name}</strong>
+                        <span>{customer.email}</span>
+                      </div>
+                    </div>
+                  </td>
+                  <td>{activeSubs.length}</td>
+                  <td>{plans.length ? plans.join(", ") : "—"}</td>
+                  <td>{formatDate(customer.joined)}</td>
+                  <td>
+                    <Status value={customer.active ? "active" : "disabled"} />
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------- invoices
+function InvoicesPage() {
+  return (
+    <section className="panel full-panel">
+      <div className="panel-heading">
+        <div>
+          <h3>Invoices & billing</h3>
+          <p>Invoice lifecycle, payments and PDF downloads land in the next backend block.</p>
+        </div>
+        <button className="secondary-button" disabled title="Invoices API is not implemented yet">
+          <Download size={15} /> Export
+        </button>
+      </div>
+
+      <div className="panel-body-padded">
+        <DemoBanner>
+          Invoice endpoints (<code>docs/API.md §8</code>) are not implemented on this branch
+          yet. The rows below are demo data so the screen can be reviewed.
+        </DemoBanner>
+      </div>
+
+      <div className="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Invoice</th>
+              <th>Customer</th>
+              <th>Date</th>
+              <th>Amount</th>
+              <th>Status</th>
+              <th>Download</th>
+            </tr>
+          </thead>
+          <tbody>
+            {DEMO_INVOICES.map((invoice) => (
+              <tr key={invoice.id}>
+                <td>
+                  <strong>{invoice.id}</strong>
+                </td>
+                <td>{invoice.customer}</td>
+                <td>{formatDate(invoice.date)}</td>
+                <td>
+                  <strong>{formatMoney(invoice.amount)}</strong>
+                </td>
+                <td>
+                  <Status value={invoice.status} />
+                </td>
+                <td>
+                  <button className="icon-button" disabled title="PDF endpoint pending">
+                    <Download size={17} />
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------- analytics
+function AnalyticsPage({ subscriptions }) {
+  const active = subscriptions.filter((subscription) => subscription.status === "active");
+  const paused = subscriptions.filter((subscription) => subscription.status === "paused");
+  const mrr = active.reduce((sum, subscription) => sum + subscription.mrr, 0);
+
+  return (
+    <>
+      <DemoBanner>
+        <code>/reports/*</code> and <code>/insights/*</code> are not implemented on this
+        branch yet. MRR here is estimated from live plan prices and excludes tax; the
+        billing schedule is computed from real subscription dates.
+      </DemoBanner>
+
+      <div className="analytics-grid">
+        <MetricCard
+          title="Estimated MRR"
+          value={formatMoney(mrr)}
+          change="ex-tax"
+          positive
+          icon={CreditCard}
+          note="from active plans"
+        />
+        <MetricCard
+          title="Estimated ARR"
+          value={formatMoney(mrr * 12)}
+          change="ex-tax"
+          positive
+          icon={ChartNoAxesCombined}
+          note="MRR × 12"
+        />
+        <MetricCard
+          title="Active subscriptions"
+          value={active.length.toString()}
+          change={`${subscriptions.length} total`}
+          positive
+          icon={Repeat}
+          note="live records"
+        />
+        <MetricCard
+          title="Paused subscriptions"
+          value={paused.length.toString()}
+          change={paused.length ? "Needs review" : "None"}
+          positive={!paused.length}
+          icon={Clock}
+          note="not billed while paused"
+        />
+
+        <section className="panel analytics-chart">
+          <div className="panel-heading">
+            <div>
+              <h3>Upcoming billing schedule</h3>
+              <p>Live active subscriptions grouped by next billing month</p>
+            </div>
+          </div>
+          <BillingScheduleChart subscriptions={subscriptions} large />
+        </section>
+
+        <section className="panel analytics-chart">
+          <div className="panel-heading">
+            <div>
+              <h3>Plan distribution</h3>
+              <p>Active subscriptions and estimated monthly value by plan</p>
+            </div>
+          </div>
+          <div className="analytics-plan-mix">
+            <PlanMix subscriptions={subscriptions} />
+          </div>
+        </section>
+      </div>
+    </>
+  );
+}
+
+// ---------------------------------------------------------------- settings
+function SettingsPage({ user, roleLabel, lastSynced, loading, onRefresh, onLogout }) {
+  return (
+    <section className="panel settings-panel">
+      <h3>Account & connection</h3>
+      <p>This workspace reads live data from the FastAPI backend.</p>
+
+      <div className="settings-row">
+        <div>
+          <strong>Signed in as</strong>
+          <span>{user.email}</span>
+        </div>
+        <span className="role-badge">{roleLabel}</span>
+      </div>
+
+      <div className="settings-row">
+        <div>
+          <strong>API base</strong>
+          <span>Every request is authenticated with your JWT.</span>
+        </div>
+        <code>{API_BASE}</code>
+      </div>
+
+      <div className="settings-row">
+        <div>
+          <strong>Live data</strong>
+          <span>{lastSynced ? `Last synced at ${formatTime(lastSynced)}` : "Not synced yet"}</span>
+        </div>
+        <button className="secondary-button" onClick={onRefresh} disabled={loading}>
+          <RefreshCw size={15} className={loading ? "spin" : ""} />{" "}
+          {loading ? "Refreshing…" : "Refresh"}
+        </button>
+      </div>
+
+      <div className="settings-row">
+        <div>
+          <strong>Currency</strong>
+          <span>Money is rendered from backend Decimal values.</span>
+        </div>
+        <span>INR (₹)</span>
+      </div>
+
+      <div className="settings-row">
+        <div>
+          <strong>Permissions</strong>
+          <span>Backend-enforced; hidden buttons are UX only.</span>
+        </div>
+        <span>{roleLabel}</span>
+      </div>
+
+      <button className="secondary-button" onClick={onLogout}>
+        <LogOut size={15} /> Sign out
+      </button>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------- modals
+const TODAY_ISO = new Date().toISOString().slice(0, 10);
+
+function AddSubscriptionModal({ customers, plans, products, initialPlanId, onClose, onCreated }) {
+  const availablePlans = plans.filter((plan) => plan.status === "active");
+  const startingPlan =
+    availablePlans.find((plan) => plan.id === Number(initialPlanId)) || availablePlans[0] || null;
+
+  const [customerId, setCustomerId] = useState(customers[0]?.id || "");
+  const [planId, setPlanId] = useState(startingPlan?.id || "");
+  const [productId, setProductId] = useState(products[0]?.id || "");
+  const [quantity, setQuantity] = useState(startingPlan?.minQuantity || 1);
+  const [startDate, setStartDate] = useState(TODAY_ISO);
+  const [paymentTerms, setPaymentTerms] = useState("Net 30");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const selectedPlan = availablePlans.find((plan) => plan.id === Number(planId));
+
+  function changePlan(value) {
+    setPlanId(value);
+    const nextPlan = availablePlans.find((plan) => plan.id === Number(value));
+    setQuantity(nextPlan?.minQuantity || 1);
+  }
+
+  const missing = [];
+  if (!customers.length) missing.push("customers");
+  if (!availablePlans.length) missing.push("active plans");
+  if (!products.length) missing.push("products");
+
+  async function submit(event) {
+    event.preventDefault();
+    if (missing.length) {
+      setError(`Create ${missing.join(", ")} first.`);
+      return;
+    }
+    if (Number(quantity) < (selectedPlan?.minQuantity || 1)) {
+      setError(`This plan requires a minimum quantity of ${selectedPlan?.minQuantity}.`);
+      return;
+    }
+
+    setBusy(true);
+    setError("");
+    try {
+      await api.createSubscription({
+        customer_id: Number(customerId),
+        plan_id: Number(planId),
+        start_date: startDate || undefined,
+        payment_terms: paymentTerms || undefined,
+        lines: [
+          {
+            product_id: Number(productId),
+            quantity: Number(quantity),
+          },
+        ],
+      });
+      const customer = customers.find((item) => item.id === Number(customerId));
+      onCreated(`Subscription created for ${customer?.name || "customer"}`);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div
+      className="modal-overlay"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
       <form className="modal" onSubmit={submit}>
-        <div className="modal-heading"><div><h3>New subscription</h3><p>Add a customer to a subscription plan.</p></div><button type="button" className="icon-button" onClick={close}><X size={20} /></button></div>
-        <label>Customer name<input name="customer" value={form.customer} onChange={update} placeholder="e.g. Olivia Rhye" required /></label>
-        <label>Email address<input name="email" type="email" value={form.email} onChange={update} placeholder="name@example.com" required /></label>
-        <label>Subscription plan<select name="plan" value={form.plan} onChange={e => setForm({ ...form, plan: e.target.value, amount: e.target.value === "Starter" ? "19" : e.target.value === "Pro Plan" ? "49" : "199" })}><option>Starter</option><option>Pro Plan</option><option>Enterprise</option></select></label>
-        <label>Monthly amount<input name="amount" type="number" min="1" value={form.amount} onChange={update} required /></label>
-        <div className="modal-actions"><button type="button" className="secondary-button" onClick={close}>Cancel</button><button className="primary-button" type="submit"><Plus size={16} /> Create subscription</button></div>
+        <div className="modal-heading">
+          <div>
+            <h3>New subscription</h3>
+            <p>Prices, discounts and tax are computed by the backend.</p>
+          </div>
+          <button type="button" className="icon-button" onClick={onClose}>
+            <X size={20} />
+          </button>
+        </div>
+
+        {missing.length > 0 && (
+          <DemoBanner>
+            Missing {missing.join(", ")}. Create them through the API/admin workflow
+            before adding a subscription.
+          </DemoBanner>
+        )}
+
+        <label>
+          Customer
+          <select
+            value={customerId}
+            onChange={(event) => setCustomerId(event.target.value)}
+            required
+          >
+            {customers.map((customer) => (
+              <option key={customer.id} value={customer.id}>
+                {customer.name} · {customer.email}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label>
+          Plan
+          <select value={planId} onChange={(event) => changePlan(event.target.value)} required>
+            {availablePlans.map((plan) => (
+              <option key={plan.id} value={plan.id}>
+                {plan.name} · {formatMoney(plan.price)}/{CYCLE_LABEL[plan.cycle] || plan.cycle}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label>
+          Product
+          <select value={productId} onChange={(event) => setProductId(event.target.value)} required>
+            {products.map((product) => (
+              <option key={product.id} value={product.id}>
+                {product.name} · {formatMoney(product.sales_price)}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <div className="form-grid">
+          <label>
+            Quantity
+            <input
+              type="number"
+              min={selectedPlan?.minQuantity || 1}
+              value={quantity}
+              onChange={(event) => setQuantity(event.target.value)}
+              required
+            />
+          </label>
+          <label>
+            Start date
+            <input
+              type="date"
+              value={startDate}
+              onChange={(event) => setStartDate(event.target.value)}
+              required
+            />
+          </label>
+        </div>
+
+        <label>
+          Payment terms
+          <select value={paymentTerms} onChange={(event) => setPaymentTerms(event.target.value)}>
+            <option value="Due on receipt">Due on receipt</option>
+            <option value="Net 7">Net 7</option>
+            <option value="Net 15">Net 15</option>
+            <option value="Net 30">Net 30</option>
+            <option value="Net 45">Net 45</option>
+            <option value="Net 60">Net 60</option>
+          </select>
+        </label>
+
+        {selectedPlan && (
+          <p className="modal-hint">
+            Plan minimum: {selectedPlan.minQuantity}. Unit price comes from the selected
+            product (plus variant delta) when omitted.
+          </p>
+        )}
+
+        {error && (
+          <div className="auth-error">
+            <AlertCircle size={15} /> {error}
+          </div>
+        )}
+
+        <div className="modal-actions">
+          <button type="button" className="secondary-button" onClick={onClose}>
+            Cancel
+          </button>
+          <button className="primary-button" type="submit" disabled={busy || missing.length > 0}>
+            {busy ? (
+              <>
+                <RefreshCw size={15} className="spin" /> Creating…
+              </>
+            ) : (
+              <>
+                <Plus size={16} /> Create subscription
+              </>
+            )}
+          </button>
+        </div>
       </form>
     </div>
   );
 }
 
-export default function App() {
-  // Fetch backend health on mount
-  useEffect(() => {
-    fetch('/api/health')
-      .then((r) => r.json())
-      .then((data) => console.log('Backend health:', data))
-      .catch((e) => console.error('Health fetch error:', e));
-  }, []);
-  const [page, setPage] = useState("dashboard");
-  const [subscriptions, setSubscriptions] = useState(initialSubscriptions);
-  const [search, setSearch] = useState("");
-  const [modal, setModal] = useState(false);
-  const [mobileOpen, setMobileOpen] = useState(false);
-
-  const pageTitles = {
-    dashboard: "Dashboard", subscriptions: "Subscriptions", plans: "Plans & Pricing",
-    customers: "Customers", invoices: "Invoices & Billing", analytics: "Analytics", settings: "Settings"
-  };
-
-  const visibleSubscriptions = subscriptions.filter(s =>
-    `${s.customer} ${s.email} ${s.plan} ${s.id}`.toLowerCase().includes(search.toLowerCase())
+function DetailItem({ label, value }) {
+  return (
+    <div className="detail-item">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
   );
+}
+
+function SubscriptionDetailModal({ subscription, onClose }) {
+  const sub = subscription;
+
+  return (
+    <div
+      className="modal-overlay"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <div className="modal detail-modal">
+        <div className="modal-heading">
+          <div>
+            <h3>{sub.number}</h3>
+            <p>
+              {sub.customer} · {sub.plan}
+            </p>
+          </div>
+          <button className="icon-button" onClick={onClose}>
+            <X size={20} />
+          </button>
+        </div>
+
+        <div className="detail-status">
+          <Status value={sub.status} />
+          <span className="muted">{sub.paymentTerms || "No payment terms"}</span>
+        </div>
+
+        <div className="detail-grid">
+          <DetailItem label="Start date" value={formatDate(sub.startDate)} />
+          <DetailItem label="Expiry date" value={formatDate(sub.expiryDate)} />
+          <DetailItem label="Next billing" value={formatDate(sub.nextBillingDate)} />
+          <DetailItem label="Plan price" value={formatMoney(sub.planPrice)} />
+          <DetailItem label="Invoice total" value={formatMoney(sub.amount)} />
+          <DetailItem label="Billing cycle" value={titleCase(sub.cycle)} />
+        </div>
+
+        <h4>Invoice lines</h4>
+        {sub.lines.length ? (
+          <div className="table-scroll">
+            <table className="detail-table">
+              <thead>
+                <tr>
+                  <th>Product</th>
+                  <th>Qty</th>
+                  <th>Unit price</th>
+                  <th>Discount</th>
+                  <th>Tax</th>
+                  <th>Line total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sub.lines.map((line) => (
+                  <tr key={line.id}>
+                    <td>{line.product}</td>
+                    <td>{line.quantity}</td>
+                    <td>{formatMoney(line.unitPrice)}</td>
+                    <td>{formatMoney(line.discount)}</td>
+                    <td>
+                      {formatMoney(line.taxAmount)} ({line.taxRate}%)
+                    </td>
+                    <td>
+                      <strong>{formatMoney(line.total)}</strong>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="empty-state">No line items returned for this subscription.</p>
+        )}
+
+        <h4>Status history</h4>
+        {sub.events.length ? (
+          <div className="timeline">
+            {sub.events.map((event, index) => (
+              <div className="timeline-item" key={event.id || index}>
+                <span className="timeline-dot" />
+                <div>
+                  <strong>{titleCase(event.status)}</strong>
+                  <p>
+                    {event.note || "Status updated"} · {event.actor}
+                  </p>
+                </div>
+                <span>{formatDateTime(event.at)}</span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="empty-state">No status events recorded.</p>
+        )}
+
+        <div className="modal-actions">
+          <button className="secondary-button" onClick={onClose}>
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- app
+export default function App() {
+  const [booting, setBooting] = useState(true);
+  const [user, setUser] = useState(null);
+  const [authBusy, setAuthBusy] = useState(false);
+  const [authError, setAuthError] = useState("");
+  const [data, setData] = useState(EMPTY_DATA);
+  const [loadingData, setLoadingData] = useState(false);
+  const [loadError, setLoadError] = useState("");
+  const [lastSynced, setLastSynced] = useState(null);
+  const [page, setPage] = useState("dashboard");
+  const [search, setSearch] = useState("");
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [presetPlanId, setPresetPlanId] = useState(null);
+  const [selected, setSelected] = useState(null);
+  const [toast, setToast] = useState(null);
+
+  function notify(message, tone = "success") {
+    setToast({ message, tone });
+  }
+
+  function handleLogout() {
+    clearToken();
+    setUser(null);
+    setData(EMPTY_DATA);
+    setLoadingData(false);
+    setBooting(false);
+    setSearch("");
+    setPage("dashboard");
+    setCreateOpen(false);
+    setPresetPlanId(null);
+    setSelected(null);
+    setLoadError("");
+    setAuthError("");
+  }
+
+  async function refreshData(activeUser = user) {
+    if (!activeUser) return;
+    setLoadingData(true);
+    setLoadError("");
+
+    const errors = [];
+    const staffLike = activeUser.role === "admin" || activeUser.role === "staff";
+    const capture = (promise) =>
+      promise.catch((error) => {
+        errors.push(error);
+        return null;
+      });
+
+    const [subs, plans, customers, products] = await Promise.all([
+      capture(api.subscriptions()),
+      staffLike ? capture(api.plans()) : Promise.resolve(null),
+      capture(api.customers()),
+      staffLike ? capture(api.products()) : Promise.resolve(null),
+    ]);
+
+    if (errors.some((error) => error.status === 401)) {
+      handleLogout();
+      return;
+    }
+
+    setData({
+      subscriptions: (subs?.items || []).map(normalizeSubscription),
+      plans: (plans?.items || []).map(normalizePlan),
+      customers: (customers?.items || []).map(normalizeCustomer),
+      products: products?.items || [],
+    });
+    setLastSynced(new Date());
+
+    if (errors.length) {
+      setLoadError(
+        errors.length === 1
+          ? errors[0].message
+          : `${errors.length} requests failed — some panels may be empty.`,
+      );
+    }
+    setLoadingData(false);
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function boot() {
+      if (!getToken()) {
+        setBooting(false);
+        return;
+      }
+      try {
+        const me = await api.me();
+        if (cancelled) return;
+        setUser(me);
+        await refreshData(me);
+      } catch (error) {
+        if (!cancelled) {
+          clearToken();
+          setAuthError(error.message || "Session expired. Please sign in.");
+        }
+      } finally {
+        if (!cancelled) setBooting(false);
+      }
+    }
+
+    boot();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!toast) return undefined;
+    const timer = window.setTimeout(() => setToast(null), 4200);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
+
+  const isStaff = user?.role === "admin" || user?.role === "staff";
+  const roleLabel =
+    user?.role === "admin" ? "Administrator" : user?.role === "staff" ? "Staff" : "Customer";
+
+  const visibleSubscriptions = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    if (!term) return data.subscriptions;
+    return data.subscriptions.filter((subscription) =>
+      `${subscription.number} ${subscription.customer} ${subscription.email} ${subscription.plan} ${subscription.status}`
+        .toLowerCase()
+        .includes(term),
+    );
+  }, [data.subscriptions, search]);
+
+  async function handleAuth({ mode, name, email, password }) {
+    setAuthBusy(true);
+    setAuthError("");
+    try {
+      if (mode === "register") {
+        await api.register({ name, email, password });
+      }
+      const result = await api.login(email, password);
+      setToken(result.access_token);
+      setUser(result.user);
+      await refreshData(result.user);
+      setPage("dashboard");
+      notify(mode === "register" ? "Account created — welcome!" : `Welcome back, ${result.user.name}`);
+    } catch (error) {
+      setAuthError(error.message);
+    } finally {
+      setAuthBusy(false);
+    }
+  }
+
+  async function handleCreated(message) {
+    setCreateOpen(false);
+    setPresetPlanId(null);
+    await refreshData(user);
+    notify(message || "Subscription created");
+  }
+
+  function openCreate(planId = null) {
+    setPresetPlanId(planId);
+    setCreateOpen(true);
+  }
 
   function navigate(id) {
     setPage(id);
     setMobileOpen(false);
+    setSelected(null);
   }
+
+  function handleSelect(subscription, destination) {
+    if (destination) {
+      setPage(destination);
+      return;
+    }
+    setSelected(subscription);
+  }
+
+  if (booting) return <BootScreen />;
+  if (!user) {
+    return <AuthScreen onAuth={handleAuth} busy={authBusy} error={authError} />;
+  }
+
+  const navGroups = [
+    {
+      title: "WORKSPACE",
+      items: [
+        { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+        {
+          id: "subscriptions",
+          label: isStaff ? "Subscriptions" : "My subscriptions",
+          icon: Repeat,
+        },
+        ...(isStaff
+          ? [
+              { id: "plans", label: "Plans & Pricing", icon: Layers },
+              { id: "customers", label: "Customers", icon: Users },
+              { id: "invoices", label: "Invoices & Billing", icon: Receipt },
+            ]
+          : []),
+      ],
+    },
+    ...(isStaff
+      ? [
+          {
+            title: "INSIGHTS",
+            items: [{ id: "analytics", label: "Analytics", icon: ChartNoAxesCombined }],
+          },
+        ]
+      : []),
+  ];
+
+  const pageTitles = {
+    dashboard: "Dashboard",
+    subscriptions: isStaff ? "Subscriptions" : "My subscriptions",
+    plans: "Plans & Pricing",
+    customers: "Customers",
+    invoices: "Invoices & Billing",
+    analytics: "Analytics",
+    settings: "Settings",
+  };
 
   return (
     <div className="app-shell">
       {mobileOpen && <div className="mobile-backdrop" onClick={() => setMobileOpen(false)} />}
+
       <aside className={`sidebar ${mobileOpen ? "sidebar-open" : ""}`}>
         <div className="brand">
-          <div className="brand-icon"><Layers size={21} /></div>
-          <span>subscribely<span className="brand-dot">.</span></span>
-          <button className="mobile-close icon-button" onClick={() => setMobileOpen(false)}><X size={20} /></button>
+          <div className="brand-icon">
+            <Layers size={21} />
+          </div>
+          <span>
+            brightloop<span className="brand-dot">.</span>
+          </span>
+          <button className="mobile-close icon-button" onClick={() => setMobileOpen(false)}>
+            <X size={20} />
+          </button>
         </div>
-        <div className="workspace-switch"><div className="workspace-avatar">O</div><div><strong>Odoo Workspace</strong><span>Free workspace</span></div><ChevronDown size={16} /></div>
+
+        <div className="workspace-switch">
+          <div className="workspace-avatar">B</div>
+          <div>
+            <strong>Brightloop Workspace</strong>
+            <span>{roleLabel}</span>
+          </div>
+          <ChevronDown size={16} />
+        </div>
+
         <nav>
-          {navGroups.map(group => (
+          {navGroups.map((group) => (
             <div className="nav-group" key={group.title}>
               <span className="nav-heading">{group.title}</span>
-              {group.items.map(item => {
+              {group.items.map((item) => {
                 const Icon = item.icon;
-                return <button key={item.id} className={`nav-item ${page === item.id ? "active" : ""}`} onClick={() => navigate(item.id)}><Icon size={18} /><span>{item.label}</span>{item.id === "subscriptions" && <span className="nav-badge">{subscriptions.length}</span>}</button>;
+                return (
+                  <button
+                    key={item.id}
+                    className={`nav-item ${page === item.id ? "active" : ""}`}
+                    onClick={() => navigate(item.id)}
+                  >
+                    <Icon size={18} />
+                    <span>{item.label}</span>
+                    {item.id === "subscriptions" && (
+                      <span className="nav-badge">{data.subscriptions.length}</span>
+                    )}
+                  </button>
+                );
               })}
             </div>
           ))}
         </nav>
+
         <div className="sidebar-bottom">
-          <div className="help-card"><Sparkles size={18} /><strong>Need a hand?</strong><p>Visit our help center for tips and guides.</p><button onClick={() => alert("Help center coming soon!")}>Visit help center <ArrowRight size={14} /></button></div>
-          <button className={`nav-item ${page === "settings" ? "active" : ""}`} onClick={() => navigate("settings")}><Settings size={18} /> Settings</button>
-          <div className="profile"><Avatar name="Afra Hussain" /><div><strong>Afra Hussain</strong><span>Administrator</span></div><MoreHorizontal size={19} /></div>
+          <div className="help-card">
+            <Sparkles size={18} />
+            <strong>Live workspace</strong>
+            <p>
+              {isStaff
+                ? "Data is loaded from the FastAPI backend. Admin and staff accounts see the full workspace."
+                : "Your customer account only sees subscriptions scoped to you by the backend."}
+            </p>
+            <button onClick={() => navigate("settings")}>
+              Connection settings <ArrowRight size={14} />
+            </button>
+          </div>
+          <button
+            className={`nav-item ${page === "settings" ? "active" : ""}`}
+            onClick={() => navigate("settings")}
+          >
+            <Settings size={18} /> Settings
+          </button>
+          <div className="profile">
+            <Avatar name={user.name} />
+            <div>
+              <strong>{user.name}</strong>
+              <span>{roleLabel}</span>
+            </div>
+            <button
+              className="icon-button profile-logout"
+              onClick={handleLogout}
+              title="Sign out"
+            >
+              <LogOut size={17} />
+            </button>
+          </div>
         </div>
       </aside>
 
       <main className="main-area">
         <header className="topbar">
-          <div className="topbar-left"><button className="mobile-menu icon-button" onClick={() => setMobileOpen(true)}><Menu size={21} /></button><span className="breadcrumb">Workspace <span>/</span> <strong>{pageTitles[page]}</strong></span></div>
+          <div className="topbar-left">
+            <button className="mobile-menu icon-button" onClick={() => setMobileOpen(true)}>
+              <Menu size={21} />
+            </button>
+            <span className="breadcrumb">
+              Workspace <span>/</span> <strong>{pageTitles[page] || "Dashboard"}</strong>
+            </span>
+          </div>
           <div className="topbar-right">
-            <div className="search-box"><Search size={17} /><input placeholder="Search anything..." value={search} onChange={e => setSearch(e.target.value)} /><kbd>⌘ K</kbd></div>
-            <button className="notification-button" title="Notifications"><Bell size={19} /><i /></button>
-            <Avatar name="Afra Hussain" />
+            {(page === "dashboard" || page === "subscriptions") && (
+              <div className="search-box">
+                <Search size={17} />
+                <input
+                  placeholder="Search subscriptions..."
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                />
+                <kbd>⌘ K</kbd>
+              </div>
+            )}
+            <button
+              className="icon-button"
+              title="Refresh live data"
+              onClick={() => refreshData(user)}
+              disabled={loadingData}
+            >
+              <RefreshCw size={18} className={loadingData ? "spin" : ""} />
+            </button>
+            <button
+              className="notification-button"
+              title="Notifications are not wired up yet"
+              onClick={() => notify("Notifications are not wired up yet.")}
+            >
+              <Bell size={19} />
+              <i />
+            </button>
+            <Avatar name={user.name} />
           </div>
         </header>
 
         <div className="page-content">
-          {page === "dashboard" && <Dashboard subscriptions={subscriptions} setPage={navigate} />}
-          {page === "subscriptions" && <SubscriptionsPage subscriptions={visibleSubscriptions} setSubscriptions={setSubscriptions} openModal={() => setModal(true)} />}
-          {page === "plans" && <PlansPage openModal={() => setModal(true)} />}
-          {page === "customers" && <CustomersPage />}
+          {loadingData && (
+            <div className="banner banner-info">
+              <RefreshCw size={16} className="spin" />
+              <div>Refreshing live data…</div>
+            </div>
+          )}
+          {loadError && (
+            <div className="banner banner-error">
+              <AlertCircle size={16} />
+              <div>{loadError}</div>
+              <button onClick={() => refreshData(user)}>Retry</button>
+            </div>
+          )}
+
+          {page === "dashboard" && (
+            <Dashboard
+              subscriptions={data.subscriptions}
+              customers={data.customers}
+              user={user}
+              isStaff={isStaff}
+              onSelect={handleSelect}
+              onRefresh={() => refreshData(user)}
+              loading={loadingData}
+              lastSynced={lastSynced}
+            />
+          )}
+          {page === "subscriptions" && (
+            <SubscriptionsPage
+              subscriptions={visibleSubscriptions}
+              isStaff={isStaff}
+              onCreate={openCreate}
+              onSelect={handleSelect}
+            />
+          )}
+          {page === "plans" && (
+            <PlansPage
+              plans={data.plans}
+              subscriptions={data.subscriptions}
+              isStaff={isStaff}
+              onCreate={openCreate}
+            />
+          )}
+          {page === "customers" && (
+            <CustomersPage customers={data.customers} subscriptions={data.subscriptions} />
+          )}
           {page === "invoices" && <InvoicesPage />}
-          {page === "analytics" && <AnalyticsPage />}
-          {page === "settings" && <SettingsPage />}
-          <footer>© 2026 Subscribely. Built for smarter subscription management.</footer>
+          {page === "analytics" && <AnalyticsPage subscriptions={data.subscriptions} />}
+          {page === "settings" && (
+            <SettingsPage
+              user={user}
+              roleLabel={roleLabel}
+              lastSynced={lastSynced}
+              loading={loadingData}
+              onRefresh={() => refreshData(user)}
+              onLogout={handleLogout}
+            />
+          )}
+
+          <footer>© 2026 Brightloop Subscriptions · Odoo × Make-A-Ton 9.0</footer>
         </div>
       </main>
-      {modal && <AddSubscriptionModal close={() => setModal(false)} add={s => setSubscriptions(old => [s, ...old])} />}
+
+      {createOpen && isStaff && (
+        <AddSubscriptionModal
+          customers={data.customers}
+          plans={data.plans}
+          products={data.products}
+          initialPlanId={presetPlanId}
+          onClose={() => {
+            setCreateOpen(false);
+            setPresetPlanId(null);
+          }}
+          onCreated={handleCreated}
+        />
+      )}
+
+      {selected && (
+        <SubscriptionDetailModal subscription={selected} onClose={() => setSelected(null)} />
+      )}
+
+      {toast && (
+        <div className={`toast toast-${toast.tone}`}>
+          {toast.tone === "error" ? <AlertCircle size={16} /> : <CircleCheck size={16} />}
+          {toast.message}
+        </div>
+      )}
     </div>
   );
 }
