@@ -381,9 +381,9 @@ Rule-based scoring is the baseline; ML only if it beats the baseline on holdout 
 | quotations pdf | ⬜ returns 501 |
 | subscriptions + transitions | ✅ implemented (bill-now ✅ live) |
 | billing runs + attempts + retry | ✅ implemented (dry_run/live, catch-up capped, idempotent, retry in place) |
-| invoices | ⬜ |
-| payments | ⬜ |
-| reports / insights | ⬜ |
+| invoices | ✅ implemented (confirm/cancel/send; derived payment_state/is_overdue/outstanding; customer-scoped) |
+| payments | ✅ implemented (record payment, list, get; auto-paid when settled; ALLOW_OVERPAYMENT flag; customer-scoped by invoice) |
+| reports / insights | ✅ implemented (summary, mrr + Holt-linear projection, overdue chase list, risk scoring, forecast) |
 | odoo | ⬜ (flag off) |
 
 Notes as implemented:
